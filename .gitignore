@@ -1,7 +1,9 @@
 checkpoints/
 __pycache__
 *.pyc
-
+.vscode/
 wandb/
-
+venv/
+data/
 setup_kmcgrath.sh
+outputs/
