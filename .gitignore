@@ -1,0 +1,7 @@
+checkpoints/
+__pycache__
+*.pyc
+
+wandb/
+
+setup_kmcgrath.sh
