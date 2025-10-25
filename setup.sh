@@ -8,19 +8,15 @@
 	&& sudo apt update \
 	&& sudo apt install gh -y
 
-gh auth login
 
 cd /workspace
 gh repo clone mcgrath-k/cs229-reasoning
-
 
 pip install wheel
 pip install ninja
 pip install flash-attn
 python -m pip install -r /workspace/cs229-reasoning/requirements.txt
-
-pip uninstall adam-atan2 && pip install --verbose --no-cache-dir adam-atan2
-
-wandb login
+pip uninstall -y adam-atan2
+pip install --verbose --no-cache-dir adam-atan2
 
 

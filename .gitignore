@@ -1,7 +1,6 @@
 checkpoints/
 __pycache__
 *.pyc
-.vscode/
 wandb/
 venv/
 data/
