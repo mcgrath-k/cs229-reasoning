@@ -1,4 +1,4 @@
-name: hrm.hrm_act_v1@HierarchicalReasoningModel_ACTV1
+name: recursive_reasoning.hrm@HierarchicalReasoningModel_ACTV1
 loss:
   name: losses@ACTLossHead
   loss_type: stablemax_cross_entropy
@@ -19,3 +19,6 @@ expansion: 4
 puzzle_emb_ndim: ${.hidden_size}
 
 pos_encodings: rope
+forward_dtype: bfloat16
+
+mlp_t: False # use mlp on L instead of transformer

@@ -31,7 +31,8 @@
         "weight_decay=1.0",
         "puzzle_emb_weight_decay=1.0"
       ],
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "justMyCode": false,
     }
   ]
 }
