@@ -2,6 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Build Addition Dataset",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "dataset/build_addition_dataset.py",
+      "console": "integratedTerminal"
+    },
+    {
       "name": "Build Sudoku Dataset",
       "type": "debugpy",
       "request": "launch",
