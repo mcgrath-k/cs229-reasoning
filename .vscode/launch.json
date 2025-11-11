@@ -1,6 +1,7 @@
 {
   "version": "0.2.0",
   "configurations": [
+
     {
       "name": "Build Addition Dataset",
       "type": "debugpy",
@@ -37,6 +38,22 @@
         "puzzle_emb_lr=7e-5",
         "weight_decay=1.0",
         "puzzle_emb_weight_decay=1.0"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+    },
+    {
+      "name": "Run pretraining addition",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "pretrain_simple.py",
+      // removed omp num threads, not sure the use yet.
+      "args": [
+        "epochs=20000",
+        "eval_interval=2000",
+        "global_batch_size=384",
+        "lr=7e-5",
+        "weight_decay=1.0",
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
