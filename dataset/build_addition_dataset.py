@@ -35,10 +35,21 @@ class ArithmeticTorchDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, idx):
+        # need to do teacher forcing for auto-regressive training
+        # otherwise model is not learning 
         item = self.dataset[idx]
 
-        input_ids = self.tokenizer.encode(item["input_text"])
-        target_ids = self.tokenizer.encode(item["answer"])
+
+        # input_ids = self.tokenizer.encode(item["input_text"])
+        # target_ids = self.tokenizer.encode(item["answer"])
+
+        # for teacher forcing, input is full sequence except last token
+        full_seq = self.tokenizer.encode(item["input_text"])
+        input_ids = full_seq[:-1]
+        # target is full sequence except first token
+        target_ids = full_seq[1:]
+
+        # can keep previous method here, but will need to do masking then
 
         return {
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
@@ -59,8 +70,10 @@ def dynamic_padding_collate_fn(batch):
     operand_len_b = torch.stack([b["operand_len_b"] for b in batch])
 
     # Compute max lengths in this batch
-    max_input_len = max(x.size(0) for x in input_ids)
-    max_label_len = max(x.size(0) for x in labels)
+    # max_input_len = max(x.size(0) for x in input_ids)
+    # max_label_len = max(x.size(0) for x in labels)
+    # pad everything to 1000 since we set seq_len=1000 in launch fn
+    max_seq_len = 200
 
     def pad_sequence(seq_list, max_len):
         padded = []
@@ -69,8 +82,8 @@ def dynamic_padding_collate_fn(batch):
             padded.append(torch.cat([seq, pad_token_id.repeat(pad_len)]))
         return torch.stack(padded)
 
-    padded_inputs = pad_sequence(input_ids, max_input_len)
-    padded_labels = pad_sequence(labels, max_label_len)
+    padded_inputs = pad_sequence(input_ids, max_seq_len)
+    padded_labels = pad_sequence(labels, max_seq_len)
 
     return {
         "input_ids": padded_inputs,
@@ -97,6 +110,12 @@ def main():
     batch = next(iter(train_loader))
     print("Input shape:", batch["input_ids"].shape)
     print("Labels shape:", batch["labels"].shape)
+
+    raw_sample = train_ds.dataset[0]
+    print("Raw input_text:", raw_sample.get("input_text"))
+    print("Raw answer:", raw_sample.get("answer"))
+    print("Encoded input:", tokenizer.encode(raw_sample["input_text"]))
+    print("Encoded label:", tokenizer.encode(raw_sample["answer"]))
 
 
 

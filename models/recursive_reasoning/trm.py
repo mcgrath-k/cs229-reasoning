@@ -199,6 +199,8 @@ class TinyRecursiveReasoningModel_ACTV1_Inner(nn.Module):
         )
 
         # Input encoding
+        # TODO: get rid of puzzle identifiers, since we dont use them in addition
+        # for now, i changed config to have puzzle_emb_ndim=0  
         input_embeddings = self._input_embeddings(batch["inputs"], batch["puzzle_identifiers"])
 
         # Forward iterations

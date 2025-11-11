@@ -100,6 +100,24 @@ def load_config(hydra_config: DictConfig) -> PretrainConfig:
     return config
 
 
+def cosine_schedule_with_warmup_lr_lambda(
+    current_step: int, *, base_lr: float, num_warmup_steps: int, num_training_steps: int, min_ratio: float = 0.0, num_cycles: float = 0.5
+):
+    if current_step < num_warmup_steps:
+        return base_lr * float(current_step) / float(max(1, num_warmup_steps))
+
+    progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+    return base_lr * (min_ratio + max(0.0, (1 - min_ratio) * 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress))))
+
+def compute_lr(base_lr: float, config: PretrainConfig, train_state: TrainState):
+    return cosine_schedule_with_warmup_lr_lambda(
+        current_step=train_state.step,
+        base_lr=base_lr,
+        num_warmup_steps=round(config.lr_warmup_steps),
+        num_training_steps=train_state.total_steps,
+        min_ratio=config.lr_min_ratio
+    )
+
 
 @hydra.main(config_path="config", config_name="cfg_pretrain", version_base=None)
 def launch(hydra_config: DictConfig):
@@ -122,20 +140,91 @@ def launch(hydra_config: DictConfig):
     test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
 
     # Create DataLoaders with dynamic padding
-    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, collate_fn=dynamic_padding_collate_fn)
-    val_loader = DataLoader(val_ds, batch_size=32, collate_fn=dynamic_padding_collate_fn)
-    test_loader = DataLoader(test_ds, batch_size=32, collate_fn=dynamic_padding_collate_fn)
+    train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, collate_fn=dynamic_padding_collate_fn)
+    val_loader = DataLoader(val_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
+    test_loader = DataLoader(test_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
 
     vocab_size = len(tokenizer)
-    seq_len = 1000 # Need to sleep on this. Does rotary encoding need max_seq_len?
-
+    # seq_len = 1000 # Need to sleep on this. Does rotary encoding need max_seq_len?
+    seq_len = 200 # 1000 felt like overkill for addition
 
     # Encapsulate model and iterative data in a single state dataclass
     train_state = init_train_state(config, vocab_size=vocab_size, seq_len=seq_len) 
 
-    thing = 5
-    # for epoch in range(config.epochs):
-    #     train_state.model.train()
+    # move model to GPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_state.model.to(device)
+
+    # Train
+    print(f"Starting training with {len(train_ds)} training samples.")
+
+    for epoch in range(config.epochs):
+        train_state.model.train()
+        epoch_metrics = {
+            "loss": 0.0,
+            "lm_loss": 0.0,
+            "q_halt_loss": 0.0,
+            "accuracy": 0.0,
+            "exact_accuracy": 0.0,
+            "steps": 0.0,
+            "count": 0.0
+        }
+
+        for batch_idx, batch in enumerate(train_loader):
+            batch = {k: v.to(device) for k, v in batch.items()}
+            model_batch = {
+                "inputs": batch["input_ids"],
+                "labels": batch["labels"],
+                # make puzzle identifiers all zeros since we dont use them
+                "puzzle_identifiers": torch.zeros_like(batch["input_ids"], dtype=torch.long)
+            }
+
+            # for now, we re-initialize carry every batch
+            # but persist within the batch
+            if train_state.carry is None:
+                # Initialize carry
+                with torch.device(device):
+                    train_state.carry = train_state.model.initial_carry(model_batch)
+
+            # forward
+            new_carry, loss, metrics, output, halted = train_state.model(carry=train_state.carry, batch=model_batch, return_keys=["logits", "preds"])
+
+            # backward
+            train_state.optimizer.zero_grad()
+            loss.backward()
+
+            # step optimizer lr
+            lr_this_step = compute_lr(train_state.optimizer_lr, config, train_state)
+            for param_group in train_state.optimizer.param_groups:
+                param_group["lr"] = lr_this_step
+            train_state.optimizer.step()
+
+            train_state.step += 1
+
+            # training metrics
+            epoch_metrics["loss"] += loss.item()
+            for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "steps", "count"]:
+                    if k in metrics:
+                        epoch_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
+
+            if batch_idx % 10 == 0:
+                print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f}")
+                # print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | "
+                #         f"Loss: {loss.item():.4f} | "
+                #         f"Acc: {metrics['accuracy'].item() / metrics['count'].item() if metrics['count'].item() > 0 else 0:.4f} | "
+                #         f"Exact Acc: {metrics['exact_accuracy'].item() / metrics['count'].item() if metrics['count'].item() > 0 else 0:.4f}")
+    
+        # Final epoch metrics
+        num_batches = len(train_loader)
+        print(f"\n=== Epoch {epoch} Summary ===")
+        print(f"Avg Loss: {epoch_metrics['loss'] / num_batches:.4f}")
+        print(f"Avg LM Loss: {epoch_metrics['lm_loss'] / num_batches:.4f}")
+        print(f"Avg Q Halt Loss: {epoch_metrics['q_halt_loss'] / num_batches:.4f}")
+        if epoch_metrics['count'] > 0:
+            print(f"Accuracy: {epoch_metrics['accuracy'] / epoch_metrics['count']:.4f}")
+            print(f"Exact Accuracy: {epoch_metrics['exact_accuracy'] / epoch_metrics['count']:.4f}")
+            print(f"Avg Steps: {epoch_metrics['steps'] / epoch_metrics['count']:.2f}")
+        print("="*30 + "\n")
 
 
 if __name__ == "__main__":
