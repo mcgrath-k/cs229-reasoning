@@ -49,6 +49,7 @@ def create_model(config: PretrainConfig, vocab_size, seq_len):
         batch_size=config.global_batch_size,
         vocab_size=vocab_size,
         seq_len=seq_len,
+        num_puzzle_identifiers=0, # Required till we remove it from model
         causal=True # Enable autoregressive modeling
     )
 
@@ -125,15 +126,14 @@ def launch(hydra_config: DictConfig):
     val_loader = DataLoader(val_ds, batch_size=32, collate_fn=dynamic_padding_collate_fn)
     test_loader = DataLoader(test_ds, batch_size=32, collate_fn=dynamic_padding_collate_fn)
 
-
-
     vocab_size = len(tokenizer)
+    seq_len = 1000 # Need to sleep on this. Does rotary encoding need max_seq_len?
 
 
     # Encapsulate model and iterative data in a single state dataclass
-    train_state = init_train_state(config, vocab_size=len(tokenizer), 
+    train_state = init_train_state(config, vocab_size=vocab_size, seq_len=seq_len) 
 
-
+    thing = 5
     # for epoch in range(config.epochs):
     #     train_state.model.train()
 
