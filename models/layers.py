@@ -167,3 +167,11 @@ def rms_norm(hidden_states: torch.Tensor, variance_epsilon: float) -> torch.Tens
     variance = hidden_states.square().mean(-1, keepdim=True)
     hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
     return hidden_states.to(input_dtype)
+
+class TranslationLayer(nn.Module):
+    # TODO: implement
+    def __init__(self, hidden_size: int, num_latents: int):
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x
