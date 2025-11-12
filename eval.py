@@ -65,7 +65,7 @@ def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
     return generated_text
 
 
-def evaluate_model(model, val_loader, device, num_batches=10):
+def evaluate_model(model, val_loader, device, num_batches=None):
     model.eval()
     
     total_metrics = {
@@ -78,9 +78,10 @@ def evaluate_model(model, val_loader, device, num_batches=10):
         "count": 0.0,
     }
     
+    batch_count = 0
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_loader):
-            if batch_idx >= num_batches:
+            if num_batches is not None and batch_idx >= num_batches:
                 break
             
             batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v 
@@ -106,10 +107,12 @@ def evaluate_model(model, val_loader, device, num_batches=10):
             for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "steps", "count"]:
                 if k in metrics:
                     total_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
+
+            batch_count += 1
     
     # Average metrics
     for k in total_metrics:
-        total_metrics[k] /= num_batches
+        total_metrics[k] /= batch_count
     
     # Compute accuracy percentages
     if total_metrics["count"] > 0:
