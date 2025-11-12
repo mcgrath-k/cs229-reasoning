@@ -20,7 +20,8 @@ def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
         "labels": current_tensor,  # Dummy labels for generation
         "puzzle_identifiers": torch.zeros_like(current_tensor, dtype=torch.long)
     }
-    carry = model.initial_carry(batch)
+    with torch.device(device):
+        carry = model.initial_carry(batch)
     
     eos_token = tokenizer.token_to_id.get("[EOS]", None)
     # Should not be None, but putting just in case
@@ -93,10 +94,11 @@ def evaluate_model(model, val_loader, device, num_batches=None):
                 "puzzle_identifiers": torch.zeros_like(batch["input_ids"], dtype=torch.long)
             }
             
-            carry = model.initial_carry(model_batch)
+            with torch.device(device):
+                carry = model.initial_carry(model_batch)
             
             # Forward pass
-            carry, loss, metrics, outputs, all_halted = model(
+            new_carry, loss, metrics, outputs, all_halted = model(
                 return_keys=["logits", "preds"],
                 carry=carry,
                 batch=model_batch,
