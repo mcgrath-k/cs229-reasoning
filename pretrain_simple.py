@@ -4,6 +4,7 @@ import hydra
 import pydantic
 import coolname
 from typing import Optional, Any, Sequence, List
+import math
 
 
 from omegaconf import DictConfig
