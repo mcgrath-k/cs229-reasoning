@@ -1,4 +1,13 @@
 import torch
+from train_utils import load_checkpoint
+from datasets import load_from_disk
+
+from torch.utils.data import DataLoader
+
+from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTokenizer, dynamic_padding_collate_fn
+
+
+
 
 def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
     model.eval()
@@ -126,3 +135,32 @@ def evaluate_model(model, val_loader, device, num_batches=None):
     
     model.train()
     return total_metrics
+
+
+
+
+if __name__ == "__main__":
+    DATASET_PATH = "data/addition_dataset"
+    CHECKPOINT_PATH = 'checkpoints/arithmetic/TinyRecursiveReasoningModel_ACTV1_literate-shrew/step_4000.pt'
+
+    prompt_text = "12349871239+123948712="
+    tokenizer = ArithmeticTokenizer()
+    model = load_checkpoint(CHECKPOINT_PATH, tokenizer, optimizer=None)
+
+    # move model to GPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    generated_text = generate(model, tokenizer, prompt_text)
+
+    ## Test evaluate model
+    dataset_dict = load_from_disk(DATASET_PATH)
+    tokenizer = ArithmeticTokenizer()
+    val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer)
+    val_loader = DataLoader(val_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
+
+    total_metrics = evaluate_model(model, val_loader, device, num_batches=128)
+
+
+    print(generated_text)
+    print(total_metrics)

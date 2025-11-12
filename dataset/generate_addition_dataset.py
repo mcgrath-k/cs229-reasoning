@@ -80,11 +80,11 @@ class AdditionDataset():
                     insert_string = f":{'.' * self.thinking_tokens}:"
                 else:
                     insert_string = ""
-                example = f"{A}+{B}{insert_string}={C}"
+                example = f"{A}+{B}{insert_string}="
 
 
                 rows.append({
-                        "input_text": example,
+                        "prompt": example,
                         "operand_len_a": i,
                         "operand_len_b": j,
                         "answer": str(C),

@@ -2,64 +2,25 @@ import os
 import torch
 import hydra
 import wandb
-import coolname
 from typing import Optional, Any, Sequence, List
 import math
 
 
 from omegaconf import DictConfig
-from adam_atan2 import AdamATan2
 
 ## Dataset imports
 from torch.utils.data import DataLoader
 from datasets import load_from_disk
 
 ## Project imports
-from models.losses import ACTLossHead
-from models.recursive_reasoning.trm import TinyRecursiveReasoningModel_ACTV1
-from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
+import train_utils
 from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTokenizer, dynamic_padding_collate_fn
 from my_dataclasses import PretrainConfig, TrainState
 
-
+from evaluate import evaluate_model
 
 
 DATASET_PATH = "data/addition_dataset"
-
-def create_model(config: PretrainConfig, vocab_size, seq_len):
-    """Create Model
-
-    Args:
-        config (PretrainConfig): Configuration object containing model specification
-        vocab_size (int): length of vocab
-        seq_len (int): length of sequence
-    """
-
-    # **config.arch.__pydantic_extra__ is double splatting all of the settings contained in
-    # config/arch/(selected_model).yaml. Whatever model is picked will be concatenated with this dict.
-
-    model_cfg = dict(
-        **config.arch.__pydantic_extra__,  # type: ignore
-        batch_size=config.global_batch_size,
-        vocab_size=vocab_size,
-        seq_len=seq_len,
-        num_puzzle_identifiers=0, # Required till we remove it from model
-        causal=True # Enable autoregressive modeling
-    )
-
-    model = TinyRecursiveReasoningModel_ACTV1(model_cfg)
-    model = ACTLossHead(model, loss_type='stablemax_cross_entropy') #type: ignore
-
-    # Optimizers and lr
-    optimizer = AdamATan2(
-            model.parameters(),
-            lr=0,  # Needs to be set by scheduler
-            weight_decay=config.weight_decay,
-            betas=(config.beta1, config.beta2))
-    
-    optimizer_lr = config.lr
-
-    return model, optimizer, optimizer_lr
 
 
 def init_train_state(config: PretrainConfig, vocab_size, seq_len):
@@ -67,7 +28,7 @@ def init_train_state(config: PretrainConfig, vocab_size, seq_len):
     total_steps = int(config.epochs / config.global_batch_size)
 
     # Model
-    model, optimizer, optimizer_lr = create_model(config, vocab_size, seq_len)
+    model, optimizer, optimizer_lr = train_utils.create_model(config, vocab_size, seq_len)
 
     return TrainState(
         step=0,
@@ -77,21 +38,6 @@ def init_train_state(config: PretrainConfig, vocab_size, seq_len):
         optimizer_lr=optimizer_lr,
         carry=None
     )
-
-
-
-def load_config(hydra_config: DictConfig) -> PretrainConfig:
-    config = PretrainConfig(**hydra_config) #type: ignore
-
-    # Set project name, run name, and checkpoint path if not provided
-    if config.project_name is None:
-        config.project_name = f"{os.path.basename(config.data_paths[0]).capitalize()}-ACT-torch"
-    if config.run_name is None:
-        config.run_name = f"{config.arch.name.split('@')[-1]} {coolname.generate_slug(2)}"
-    if config.checkpoint_path is None:
-        config.checkpoint_path = os.path.join("checkpoints", config.project_name, config.run_name)
-
-    return config
 
 
 def cosine_schedule_with_warmup_lr_lambda(
@@ -115,11 +61,8 @@ def compute_lr(base_lr: float, config: PretrainConfig, train_state: TrainState):
 
 @hydra.main(config_path="config", config_name="cfg_pretrain", version_base=None)
 def launch(hydra_config: DictConfig):
-
-
-
     # Assemble hydra dict into dataclass
-    config = load_config(hydra_config)
+    config = train_utils.load_config(hydra_config)
 
     torch.random.manual_seed(config.seed)
 
@@ -141,18 +84,14 @@ def launch(hydra_config: DictConfig):
     test_loader = DataLoader(test_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
 
     vocab_size = len(tokenizer)
-    # seq_len = 1000 # Need to sleep on this. Does rotary encoding need max_seq_len?
     seq_len = 200 # 1000 felt like overkill for addition
 
     # Encapsulate model and iterative data in a single state dataclass
     train_state = init_train_state(config, vocab_size=vocab_size, seq_len=seq_len) 
 
-<<<<<<< HEAD
     wandb.init(project=config.project_name, name=config.run_name, config=config.model_dump(), settings=wandb.Settings(_disable_stats=True))  # type: ignore
     wandb.log({"num_params": sum(x.numel() for x in train_state.model.parameters())}, step=0)
 
-=======
->>>>>>> arithmetic-aarohi
     # move model to GPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_state.model.to(device)
@@ -201,25 +140,26 @@ def launch(hydra_config: DictConfig):
                 param_group["lr"] = lr_this_step
             train_state.optimizer.step()
 
-            train_state.step += 1
-
             # training metrics
             epoch_metrics["loss"] += loss.item()
             for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "steps", "count"]:
-                    if k in metrics:
-                        epoch_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
+                if k in metrics:
+                    epoch_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
 
             if batch_idx % 10 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f}")
-                # print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | "
-                #         f"Loss: {loss.item():.4f} | "
-                #         f"Acc: {metrics['accuracy'].item() / metrics['count'].item() if metrics['count'].item() > 0 else 0:.4f} | "
-                #         f"Exact Acc: {metrics['exact_accuracy'].item() / metrics['count'].item() if metrics['count'].item() > 0 else 0:.4f}")
-<<<<<<< HEAD
 
-            wandb.log(metrics, step=train_state.step)
-=======
->>>>>>> arithmetic-aarohi
+            if train_state.step % config.save_interval == 0 and train_state.step > 0:
+                train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
+
+            if train_state.step % config.eval_interval == 0 and train_state.step > 0: # type: ignore
+                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=128)
+                val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
+                wandb.log(val_metrics, step=train_state.step)
+
+            train_metrics = {f"train/{k}": v for k, v in metrics.items()}
+            wandb.log(train_metrics, step=train_state.step)
+            train_state.step += 1
     
         # Final epoch metrics
         num_batches = len(train_loader)
@@ -232,12 +172,6 @@ def launch(hydra_config: DictConfig):
             print(f"Exact Accuracy: {epoch_metrics['exact_accuracy'] / epoch_metrics['count']:.4f}")
             print(f"Avg Steps: {epoch_metrics['steps'] / epoch_metrics['count']:.2f}")
         print("="*30 + "\n")
-<<<<<<< HEAD
-
-        
-=======
->>>>>>> arithmetic-aarohi
-
 
 if __name__ == "__main__":
     launch()

@@ -73,7 +73,6 @@ class ACTLossHead(nn.Module):
         **model_kwargs,
     ) -> Tuple[Any, torch.Tensor, Dict[str, torch.Tensor], Optional[Dict[str, torch.Tensor]], torch.Tensor]:
         
-        tokenizer = ArithmeticTokenizer()
         # Model logits
         # B x SeqLen x D
         new_carry, outputs = self.model(**model_kwargs)

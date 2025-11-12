@@ -32,7 +32,6 @@
       "args": [
         "data_path=data/sudoku-extreme-1k-aug-1000",
         "epochs=20000",
-        "eval_interval=2000",
         "global_batch_size=384",
         "lr=7e-5",
         "puzzle_emb_lr=7e-5",
@@ -50,11 +49,18 @@
       // removed omp num threads, not sure the use yet.
       "args": [
         "epochs=20000",
-        "eval_interval=2000",
         "global_batch_size=384",
         "lr=7e-5",
         "weight_decay=1.0",
       ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+    },
+    {
+      "name": "Evaluate",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
     }

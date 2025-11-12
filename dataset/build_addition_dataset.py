@@ -39,20 +39,28 @@ class ArithmeticTorchDataset(Dataset):
         # otherwise model is not learning 
         item = self.dataset[idx]
 
-        # input_ids = self.tokenizer.encode(item["input_text"])
+        # input_ids = self.tokenizer.encode(item["prompt"])
         # target_ids = self.tokenizer.encode(item["answer"])
 
-        # for teacher forcing, input is full sequence except last token
-        full_seq = self.tokenizer.encode(item["input_text"]) + [self.tokenizer.token_to_id["[EOS]"]]
-        input_ids = full_seq[:-1]
-        # target is full sequence except first token
-        target_ids = full_seq[1:]
+        prompt = self.tokenizer.encode(item["prompt"])
+        answer = self.tokenizer.encode(item["answer"])
+        eos_id = self.tokenizer.token_to_id["[EOS]"]
 
-        # can keep previous method here, but will need to do masking then
+        full = prompt + answer + [eos_id]
+        input_ids = full[:-1]
+        labels    = full[1:]
+
+        IGNORE = -100
+        prompt_len = len(prompt)
+
+        labels = torch.tensor(labels, dtype=torch.long)
+        # Keep index (prompt_len-1) so the model learns to output the first answer token
+        if prompt_len > 1:
+            labels[:prompt_len-1] = IGNORE
 
         return {
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
-            "labels": torch.tensor(target_ids, dtype=torch.long),
+            "labels": torch.tensor(labels, dtype=torch.long),
             "operand_len_a": torch.tensor(item["operand_len_a"]),
             "operand_len_b": torch.tensor(item["operand_len_b"]),
         }
@@ -61,7 +69,7 @@ def dynamic_padding_collate_fn(batch):
     """
     Pads all sequences in the batch dynamically to the max length in that batch.
     """
-    pad_token_id = batch[0]["input_ids"].new_tensor([0])  # [PAD] = 0
+    pad_token_id = torch.tensor([0], dtype=torch.long) # PAD: 0
 
     input_ids = [b["input_ids"] for b in batch]
     labels = [b["labels"] for b in batch]
@@ -114,9 +122,9 @@ def main():
     print("Labels shape:", batch["labels"].shape)
 
     raw_sample = train_ds.dataset[0]
-    print("Raw input_text:", raw_sample.get("input_text"))
+    print("Raw prompt:", raw_sample.get("prompt"))
     print("Raw answer:", raw_sample.get("answer"))
-    print("Encoded input:", tokenizer.encode(raw_sample["input_text"]))
+    print("Encoded input:", tokenizer.encode(raw_sample["prompt"]))
     print("Encoded label:", tokenizer.encode(raw_sample["answer"]))
 
 

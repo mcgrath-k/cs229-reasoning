@@ -1,9 +1,52 @@
+import os
 import math
+import torch
+import coolname
+from adam_atan2 import AdamATan2
+from omegaconf import DictConfig
 
-from puzzle_dataset import PuzzleDataset
-from torch.utils.data import DataLoader
+from my_dataclasses import TrainState, PretrainConfig
 
-from my_dataclasses import TrainState, PretrainConfig, PuzzleDatasetConfig
+from models.losses import ACTLossHead
+from models.recursive_reasoning.trm import TinyRecursiveReasoningModel_ACTV1
+
+
+
+
+def create_model(config: PretrainConfig, vocab_size, seq_len):
+    """Create Model
+
+    Args:
+        config (PretrainConfig): Configuration object containing model specification
+        vocab_size (int): length of vocab
+        seq_len (int): length of sequence
+    """
+
+    # **config.arch.__pydantic_extra__ is double splatting all of the settings contained in
+    # config/arch/(selected_model).yaml. Whatever model is picked will be concatenated with this dict.
+
+    model_cfg = dict(
+        **config.arch.__pydantic_extra__,  # type: ignore
+        batch_size=config.global_batch_size,
+        vocab_size=vocab_size,
+        seq_len=seq_len,
+        num_puzzle_identifiers=0, # Required till we remove it from model
+        causal=True # Enable autoregressive modeling [working]
+    )
+
+    model = TinyRecursiveReasoningModel_ACTV1(model_cfg)
+    model = ACTLossHead(model, loss_type='stablemax_cross_entropy') #type: ignore
+
+    # Optimizers and lr
+    optimizer = AdamATan2(
+            model.parameters(),
+            lr=0,  # Needs to be set by scheduler
+            weight_decay=config.weight_decay,
+            betas=(config.beta1, config.beta2))
+    
+    optimizer_lr = config.lr
+
+    return model, optimizer, optimizer_lr
 
 def cosine_schedule_with_warmup_lr_lambda(
     current_step: int, *, base_lr: float, num_warmup_steps: int, num_training_steps: int, min_ratio: float = 0.0, num_cycles: float = 0.5
@@ -24,22 +67,50 @@ def compute_lr(base_lr: float, config: PretrainConfig, train_state: TrainState):
         min_ratio=config.lr_min_ratio
     )
 
+def save_checkpoint(train_state, config, filename="checkpoint.pt"):
+    """Save model, optimizer, and metadata to disk."""
+    os.makedirs(config.checkpoint_path, exist_ok=True)
+    path = os.path.join(config.checkpoint_path, filename)
 
-def create_dataloader(config: PretrainConfig, split: str, rank: int, world_size: int, **kwargs):
-    dataset = PuzzleDataset(PuzzleDatasetConfig(
-        seed=config.seed,
-        dataset_paths=config.data_paths_test if len(config.data_paths_test)>0 and split=="test" else config.data_paths,
-        rank=rank,
-        num_replicas=world_size,
-        **kwargs
-    ), split=split)
-    dataloader = DataLoader(
-        dataset,
-        batch_size=None,
-        num_workers=1,
-        prefetch_factor=8,
-        pin_memory=True,
-        persistent_workers=True
-    )
-    return dataloader, dataset.metadata
+    torch.save({
+        "step": train_state.step,
+        "model_state_dict": train_state.model.state_dict(),
+        "optimizer_state_dict": train_state.optimizer.state_dict(),
+        "config": config.model_dump(),
+    }, path)
 
+    print(f"Saved checkpoint to {path}")
+
+
+def load_config(hydra_config: DictConfig) -> PretrainConfig:
+    config = PretrainConfig(**hydra_config) #type: ignore
+
+    # Set project name, run name, and checkpoint path if not provided
+    if config.project_name is None:
+        config.project_name = f"{os.path.basename(config.data_paths[0]).capitalize()}-ACT-torch"
+    if config.run_name is None:
+        config.run_name = f"{config.arch.name.split('@')[-1]}_{coolname.generate_slug(2)}"
+    if config.checkpoint_path is None:
+        config.checkpoint_path = os.path.join("checkpoints", config.project_name, config.run_name)
+
+    return config
+
+def load_checkpoint(path, tokenizer, optimizer=None, device="cuda"):
+    """Load model and optimizer from checkpoint."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Checkpoint not found at {path}")
+
+    checkpoint = torch.load(path, map_location=device)
+
+    config = load_config(checkpoint['config'])
+
+    model, _, _= create_model(config, seq_len=200, vocab_size=len(tokenizer))
+    
+    model.load_state_dict(checkpoint["model_state_dict"])
+    
+    if optimizer is not None and "optimizer_state_dict" in checkpoint:
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+    print(f"Loaded checkpoint from {path} (step={checkpoint.get('step', 'N/A')})")
+
+    return model
