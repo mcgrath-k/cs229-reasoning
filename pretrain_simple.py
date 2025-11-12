@@ -3,7 +3,10 @@ import torch
 import hydra
 import wandb
 import coolname
+from typing import Optional, Any, Sequence, List
 import math
+
+
 from omegaconf import DictConfig
 from adam_atan2 import AdamATan2
 
@@ -91,6 +94,24 @@ def load_config(hydra_config: DictConfig) -> PretrainConfig:
     return config
 
 
+def cosine_schedule_with_warmup_lr_lambda(
+    current_step: int, *, base_lr: float, num_warmup_steps: int, num_training_steps: int, min_ratio: float = 0.0, num_cycles: float = 0.5
+):
+    if current_step < num_warmup_steps:
+        return base_lr * float(current_step) / float(max(1, num_warmup_steps))
+
+    progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+    return base_lr * (min_ratio + max(0.0, (1 - min_ratio) * 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress))))
+
+def compute_lr(base_lr: float, config: PretrainConfig, train_state: TrainState):
+    return cosine_schedule_with_warmup_lr_lambda(
+        current_step=train_state.step,
+        base_lr=base_lr,
+        num_warmup_steps=round(config.lr_warmup_steps),
+        num_training_steps=train_state.total_steps,
+        min_ratio=config.lr_min_ratio
+    )
+
 
 @hydra.main(config_path="config", config_name="cfg_pretrain", version_base=None)
 def launch(hydra_config: DictConfig):
@@ -115,20 +136,23 @@ def launch(hydra_config: DictConfig):
     test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
 
     # Create DataLoaders with dynamic padding
-    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, collate_fn=dynamic_padding_collate_fn)
-    val_loader = DataLoader(val_ds, batch_size=32, collate_fn=dynamic_padding_collate_fn)
-    test_loader = DataLoader(test_ds, batch_size=32, collate_fn=dynamic_padding_collate_fn)
+    train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, collate_fn=dynamic_padding_collate_fn)
+    val_loader = DataLoader(val_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
+    test_loader = DataLoader(test_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
 
     vocab_size = len(tokenizer)
-    seq_len = 1000 # Need to sleep on this. Does rotary encoding need max_seq_len?
-
+    # seq_len = 1000 # Need to sleep on this. Does rotary encoding need max_seq_len?
+    seq_len = 200 # 1000 felt like overkill for addition
 
     # Encapsulate model and iterative data in a single state dataclass
     train_state = init_train_state(config, vocab_size=vocab_size, seq_len=seq_len) 
 
+<<<<<<< HEAD
     wandb.init(project=config.project_name, name=config.run_name, config=config.model_dump(), settings=wandb.Settings(_disable_stats=True))  # type: ignore
     wandb.log({"num_params": sum(x.numel() for x in train_state.model.parameters())}, step=0)
 
+=======
+>>>>>>> arithmetic-aarohi
     # move model to GPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_state.model.to(device)
@@ -191,8 +215,11 @@ def launch(hydra_config: DictConfig):
                 #         f"Loss: {loss.item():.4f} | "
                 #         f"Acc: {metrics['accuracy'].item() / metrics['count'].item() if metrics['count'].item() > 0 else 0:.4f} | "
                 #         f"Exact Acc: {metrics['exact_accuracy'].item() / metrics['count'].item() if metrics['count'].item() > 0 else 0:.4f}")
+<<<<<<< HEAD
 
             wandb.log(metrics, step=train_state.step)
+=======
+>>>>>>> arithmetic-aarohi
     
         # Final epoch metrics
         num_batches = len(train_loader)
@@ -205,8 +232,11 @@ def launch(hydra_config: DictConfig):
             print(f"Exact Accuracy: {epoch_metrics['exact_accuracy'] / epoch_metrics['count']:.4f}")
             print(f"Avg Steps: {epoch_metrics['steps'] / epoch_metrics['count']:.2f}")
         print("="*30 + "\n")
+<<<<<<< HEAD
 
         
+=======
+>>>>>>> arithmetic-aarohi
 
 
 if __name__ == "__main__":
