@@ -4,7 +4,7 @@ from datasets import load_from_disk
 
 DATASET_PATH = "data/addition_dataset"
 VOCAB_CHARS = list("0123456789+=")
-SPECIAL_TOKENS = ["[PAD]", "[THINK]"]
+SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
 
 
 class ArithmeticTokenizer:
@@ -16,11 +16,11 @@ class ArithmeticTokenizer:
 
     def encode(self, text):
         # Convert a string into a list of token IDs
-        return [self.token_to_id.get(ch, self.token_to_id["[PAD]"]) for ch in text]
+        return [self.token_to_id[i] for i in text]
 
     def decode(self, token_ids):
         # Convert a list of token IDs back into a string
-        return "".join(self.id_to_token.get(i, "") for i in token_ids)
+        return "".join(self.id_to_token.get(i, "[UNK]") for i in token_ids)
 
     def __len__(self):
         return len(self.vocab)
@@ -37,8 +37,16 @@ class ArithmeticTorchDataset(Dataset):
     def __getitem__(self, idx):
         item = self.dataset[idx]
 
-        input_ids = self.tokenizer.encode(item["input_text"])
-        target_ids = self.tokenizer.encode(item["answer"])
+        # input_ids = self.tokenizer.encode(item["input_text"])
+        # target_ids = self.tokenizer.encode(item["answer"])
+
+        # for teacher forcing, input is full sequence except last token
+        full_seq = self.tokenizer.encode(item["input_text"]) + [self.tokenizer.token_to_id["[EOS]"]]
+        input_ids = full_seq[:-1]
+        # target is full sequence except first token
+        target_ids = full_seq[1:]
+
+        # can keep previous method here, but will need to do masking then
 
         return {
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
@@ -71,6 +79,9 @@ def dynamic_padding_collate_fn(batch):
 
     padded_inputs = pad_sequence(input_ids, max_input_len)
     padded_labels = pad_sequence(labels, max_label_len)
+
+    # Set labels to -100 for cross entropy loss
+    padded_labels[padded_labels == pad_token_id] = -100
 
     return {
         "input_ids": padded_inputs,

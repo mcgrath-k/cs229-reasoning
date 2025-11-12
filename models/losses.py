@@ -37,6 +37,25 @@ def softmax_cross_entropy(logits, labels, ignore_index: int = -100):
     # Flatten logits
     return F.cross_entropy(logits.to(torch.float32).view(-1, logits.shape[-1]), labels.to(torch.long).view(-1), ignore_index=ignore_index, reduction="none").view(labels.shape)
 
+import numpy as np
+from dataset.build_addition_dataset import ArithmeticTokenizer
+def quick_validate(output_tensor, label_tensor):
+
+    tokenizer = ArithmeticTokenizer()
+
+    # Slice top of tensor for samples.
+    output_samples = output_tensor.tolist()
+
+    mask = np.array((label_tensor != IGNORE_LABEL_ID).tolist())
+    label_samples = np.array(label_tensor.tolist())
+
+    label_masked = label_samples[mask]
+
+    print(f"output: {tokenizer.decode(output_samples)}")
+    print(f"labels: {tokenizer.decode(label_masked)}")
+
+
+
 
 class ACTLossHead(nn.Module):
     def __init__(self, model: nn.Module, loss_type: str):
@@ -53,6 +72,8 @@ class ACTLossHead(nn.Module):
         # Model args
         **model_kwargs,
     ) -> Tuple[Any, torch.Tensor, Dict[str, torch.Tensor], Optional[Dict[str, torch.Tensor]], torch.Tensor]:
+        
+        tokenizer = ArithmeticTokenizer()
         # Model logits
         # B x SeqLen x D
         new_carry, outputs = self.model(**model_kwargs)
@@ -67,8 +88,11 @@ class ACTLossHead(nn.Module):
             loss_counts = mask.sum(-1)
             loss_divisor = loss_counts.clamp_min(1).unsqueeze(-1)  # Avoid NaNs in division
 
-            is_correct = mask & (torch.argmax(outputs["logits"], dim=-1) == labels)
+            output = torch.argmax(outputs["logits"], dim=-1)
+            is_correct = mask & (output == labels)
             seq_is_correct = is_correct.sum(-1) == loss_counts
+
+            # quick_validate(output, labels)
             
             # Metrics (halted)
             valid_metrics = new_carry.halted & (loss_counts > 0)
