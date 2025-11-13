@@ -141,9 +141,9 @@ def evaluate_model(model, val_loader, device, num_batches=None):
 
 if __name__ == "__main__":
     DATASET_PATH = "data/addition_dataset"
-    CHECKPOINT_PATH = 'checkpoints/arithmetic/TinyRecursiveReasoningModel_ACTV1_literate-shrew/step_4000.pt'
+    CHECKPOINT_PATH = 'checkpoints/arithmetic/TinyRecursiveReasoningModel_ACTV1_sage-wolf/step_7000.pt'
 
-    prompt_text = "12349871239+123948712="
+    prompt_text = "10+60="
     tokenizer = ArithmeticTokenizer()
     model = load_checkpoint(CHECKPOINT_PATH, tokenizer, optimizer=None)
 
@@ -152,6 +152,9 @@ if __name__ == "__main__":
     model.to(device)
 
     generated_text = generate(model, tokenizer, prompt_text)
+
+    print(generated_text)
+
 
     ## Test evaluate model
     dataset_dict = load_from_disk(DATASET_PATH)
@@ -162,5 +165,4 @@ if __name__ == "__main__":
     total_metrics = evaluate_model(model, val_loader, device, num_batches=128)
 
 
-    print(generated_text)
     print(total_metrics)

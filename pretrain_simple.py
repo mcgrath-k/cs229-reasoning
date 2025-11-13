@@ -122,10 +122,10 @@ def launch(hydra_config: DictConfig):
 
             # for now, we re-initialize carry every batch
             # but persist within the batch
-            if train_state.carry is None:
-                # Initialize carry
-                with torch.device(device):
-                    train_state.carry = train_state.model.initial_carry(model_batch)
+
+            # Initialize carry
+            with torch.device(device):
+                train_state.carry = train_state.model.initial_carry(model_batch)
 
             # forward
             new_carry, loss, metrics, output, halted = train_state.model(carry=train_state.carry, batch=model_batch, return_keys=["logits", "preds"])
@@ -161,6 +161,7 @@ def launch(hydra_config: DictConfig):
             wandb.log(train_metrics, step=train_state.step)
             train_state.step += 1
     
+        train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
         # Final epoch metrics
         num_batches = len(train_loader)
         print(f"\n=== Epoch {epoch} Summary ===")
