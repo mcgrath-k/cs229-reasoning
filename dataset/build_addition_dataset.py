@@ -80,7 +80,7 @@ def dynamic_padding_collate_fn(batch):
     # max_input_len = max(x.size(0) for x in input_ids)
     # max_label_len = max(x.size(0) for x in labels)
     # pad everything to 1000 since we set seq_len=1000 in launch fn
-    max_seq_len = 200
+    max_seq_len = 1000
 
     def pad_sequence(seq_list, max_len):
         padded = []

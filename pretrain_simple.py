@@ -84,7 +84,7 @@ def launch(hydra_config: DictConfig):
     test_loader = DataLoader(test_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
 
     vocab_size = len(tokenizer)
-    seq_len = 200 # 1000 felt like overkill for addition
+    seq_len = 1000# 1000 felt like overkill for addition
 
     # Encapsulate model and iterative data in a single state dataclass
     train_state = init_train_state(config, vocab_size=vocab_size, seq_len=seq_len) 
