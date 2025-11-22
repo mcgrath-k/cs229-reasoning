@@ -2,6 +2,7 @@ import os
 import math
 import torch
 import coolname
+import numpy as np
 from adam_atan2 import AdamATan2
 from omegaconf import DictConfig
 
@@ -9,8 +10,9 @@ from my_dataclasses import TrainState, PretrainConfig
 
 from models.losses import ACTLossHead
 from models.recursive_reasoning.trm import TinyRecursiveReasoningModel_ACTV1
+from dataset.build_addition_dataset import ArithmeticTokenizer
 
-
+IGNORE_LABEL_ID = -100
 
 
 def create_model(config: PretrainConfig, vocab_size, seq_len):
@@ -80,6 +82,29 @@ def save_checkpoint(train_state, config, filename="checkpoint.pt"):
     }, path)
 
     print(f"Saved checkpoint to {path}")
+
+
+def quick_validate(output_tensor: torch.Tensor, label_tensor: torch.Tensor) -> None:
+    """
+    Decode and print model outputs and labels for quick debugging.
+
+    Args:
+        output_tensor (torch.Tensor): Predicted token IDs.
+        label_tensor (torch.Tensor): True token IDs (with IGNORE_LABEL_ID positions removed).
+    """
+
+    tokenizer = ArithmeticTokenizer()
+
+    # Slice top of tensor for samples.
+    output_samples = output_tensor.tolist()
+
+    mask = np.array((label_tensor != IGNORE_LABEL_ID).tolist())
+    label_samples = np.array(label_tensor.tolist())
+
+    label_masked = label_samples[mask]
+
+    print(f"output: {tokenizer.decode(output_samples)}")
+    print(f"labels: {tokenizer.decode(label_masked)}")
 
 
 def load_config(hydra_config: DictConfig) -> PretrainConfig:
