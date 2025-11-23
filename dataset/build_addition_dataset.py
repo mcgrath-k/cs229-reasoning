@@ -139,10 +139,9 @@ def dynamic_padding_collate_fn(batch):
     difficulty = torch.stack([b["difficulty"] for b in batch])
 
     # Compute max lengths in this batch
-    # max_input_len = max(x.size(0) for x in input_ids)
-    # max_label_len = max(x.size(0) for x in labels)
+    max_input_len = max(x.size(0) for x in input_ids)
+    max_label_len = max(x.size(0) for x in labels)
     # pad everything to 1000 since we set seq_len=1000 in launch fn
-    max_seq_len = 200
 
     def pad_sequence(seq_list, max_len):
         padded = []
@@ -151,8 +150,8 @@ def dynamic_padding_collate_fn(batch):
             padded.append(torch.cat([seq, pad_token_id.repeat(pad_len)]))
         return torch.stack(padded)
 
-    padded_inputs = pad_sequence(input_ids, max_seq_len)
-    padded_labels = pad_sequence(labels, max_seq_len)
+    padded_inputs = pad_sequence(input_ids, max_input_len)
+    padded_labels = pad_sequence(labels, max_label_len)
 
     # Set labels to -100 for cross entropy loss
     padded_labels[padded_labels == pad_token_id] = -100
