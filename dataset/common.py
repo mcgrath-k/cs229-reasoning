@@ -15,11 +15,13 @@ class PuzzleDatasetMetadata(pydantic.BaseModel):
     blank_identifier_id: int
     vocab_size: int
     seq_len: int
-    num_puzzle_identifiers: int
-    total_groups: int
-    mean_puzzle_examples: float
-    total_puzzles: int
-    sets: List[str]
+
+    # Puzzle Specific
+    total_groups: Optional[int]
+    mean_puzzle_examples: Optional[float]
+    total_puzzles: Optional[int]
+    sets: Optional[List[str]]
+    num_puzzle_identifiers: Optional[int]
 
 
 def dihedral_transform(arr: np.ndarray, tid: int) -> np.ndarray:

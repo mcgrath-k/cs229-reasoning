@@ -36,6 +36,8 @@ class TinyRecursiveReasoningModel_ACTV1Config(BaseModel):
     num_puzzle_identifiers: int
     vocab_size: int
 
+    causal: bool
+
     H_cycles: int
     L_cycles: int
 
@@ -79,7 +81,7 @@ class TinyRecursiveReasoningModel_ACTV1Block(nn.Module):
                 head_dim=config.hidden_size // config.num_heads,
                 num_heads=config.num_heads,
                 num_key_value_heads=config.num_heads,
-                causal=False
+                causal=self.config.causal
             )
         self.mlp = SwiGLU(
             hidden_size=config.hidden_size,
@@ -199,6 +201,8 @@ class TinyRecursiveReasoningModel_ACTV1_Inner(nn.Module):
         )
 
         # Input encoding
+        # TODO: get rid of puzzle identifiers, since we dont use them in addition
+        # for now, i changed config to have puzzle_emb_ndim=0  
         input_embeddings = self._input_embeddings(batch["inputs"], batch["puzzle_identifiers"])
 
         # Forward iterations

@@ -3,7 +3,6 @@ from typing import Any, Tuple, Dict, Sequence, Optional
 import torch
 import torch.nn.functional as F
 from torch import nn
-import math
 
 IGNORE_LABEL_ID = -100
 
@@ -53,6 +52,7 @@ class ACTLossHead(nn.Module):
         # Model args
         **model_kwargs,
     ) -> Tuple[Any, torch.Tensor, Dict[str, torch.Tensor], Optional[Dict[str, torch.Tensor]], torch.Tensor]:
+        
         # Model logits
         # B x SeqLen x D
         new_carry, outputs = self.model(**model_kwargs)
@@ -67,7 +67,8 @@ class ACTLossHead(nn.Module):
             loss_counts = mask.sum(-1)
             loss_divisor = loss_counts.clamp_min(1).unsqueeze(-1)  # Avoid NaNs in division
 
-            is_correct = mask & (torch.argmax(outputs["logits"], dim=-1) == labels)
+            output = torch.argmax(outputs["logits"], dim=-1)
+            is_correct = mask & (output == labels)
             seq_is_correct = is_correct.sum(-1) == loss_counts
             
             # Metrics (halted)

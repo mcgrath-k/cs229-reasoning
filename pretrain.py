@@ -191,19 +191,6 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
 
     return model, optimizers, optimizer_lrs
 
-def mix_weights_direct(device, alpha, net, nets):
-    sd = []
-    for i in range(len(nets)):
-        sd += [nets[i].state_dict()]
-    sd_alpha = {}
-    for k in sd[0].keys():
-        comb_net = alpha[0]*sd[0][k].to(device)
-        for i in range(1,len(nets)):
-            comb_net += alpha[i]*sd[i][k].to(device)
-        sd_alpha[k] =  comb_net
-    net.load_state_dict(sd_alpha)
-    return net
-
 def cosine_schedule_with_warmup_lr_lambda(
     current_step: int, *, base_lr: float, num_warmup_steps: int, num_training_steps: int, min_ratio: float = 0.0, num_cycles: float = 0.5
 ):
