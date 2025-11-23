@@ -23,12 +23,12 @@ from evaluate import evaluate_model
 DATASET_PATH = "data/addition_dataset"
 
 
-def init_train_state(config: PretrainConfig, vocab_size, seq_len):
+def init_train_state(config: PretrainConfig, vocab_size):
     # Estimated total training steps
     total_steps = int(config.epochs / config.global_batch_size)
 
     # Model
-    model, optimizer, optimizer_lr = train_utils.create_model(config, vocab_size, seq_len)
+    model, optimizer, optimizer_lr = train_utils.create_model(config, vocab_size)
 
     return TrainState(
         step=0,
@@ -79,15 +79,14 @@ def launch(hydra_config: DictConfig):
     test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
 
     # Create DataLoaders with dynamic padding
-    train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, collate_fn=dynamic_padding_collate_fn)
-    val_loader = DataLoader(val_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
+    train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, collate_fn=dynamic_padding_collate_fn)
+    val_loader = DataLoader(val_ds, batch_size=64, collate_fn=dynamic_padding_collate_fn)
     test_loader = DataLoader(test_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
 
     vocab_size = len(tokenizer)
-    seq_len = 1000# 1000 felt like overkill for addition
 
     # Encapsulate model and iterative data in a single state dataclass
-    train_state = init_train_state(config, vocab_size=vocab_size, seq_len=seq_len) 
+    train_state = init_train_state(config, vocab_size=vocab_size)
 
     wandb.init(project=config.project_name, name=config.run_name, config=config.model_dump(), settings=wandb.Settings(_disable_stats=True))  # type: ignore
     wandb.log({"num_params": sum(x.numel() for x in train_state.model.parameters())}, step=0)

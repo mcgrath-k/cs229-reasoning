@@ -125,6 +125,14 @@ class Attention(nn.Module):
         # RoPE
         if cos_sin is not None:
             cos, sin = cos_sin
+            if cos.size(0) < seq_len:
+                raise ValueError(
+                    f"RoPE cache too short: cos.size(0)={cos.size(0)}, seq_len={seq_len}"
+                )
+            
+            # slice to fit RoPE maximum...
+            cos = cos[:seq_len, :]
+            sin = sin[:seq_len, :]
             query, key = apply_rotary_pos_emb(query, key, cos, sin)
 
         # flash attn

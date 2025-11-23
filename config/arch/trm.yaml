@@ -12,9 +12,14 @@ L_cycles: 6
 H_layers: 0
 L_layers: 2
 
+max_seq_len: 10000 # Arbitrary maximum seq_len for rope. 
+# If we truly need to remove the notion of a 'maximum', need to look into RoPE successor papers.
+
 hidden_size: 512
 num_heads: 8  # min(2, hidden_size // 64)
 expansion: 4
+
+fixed_dim: 5
 
 # puzzle_emb_ndim: ${.hidden_size}
 puzzle_emb_ndim: 0 # no puzzle embeddings
