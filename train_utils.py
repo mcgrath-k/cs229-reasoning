@@ -15,7 +15,7 @@ from dataset.build_addition_dataset import ArithmeticTokenizer
 IGNORE_LABEL_ID = -100
 
 
-def create_model(config: PretrainConfig, vocab_size, seq_len):
+def create_model(config: PretrainConfig, vocab_size):
     """Create Model
 
     Args:
@@ -31,8 +31,6 @@ def create_model(config: PretrainConfig, vocab_size, seq_len):
         **config.arch.__pydantic_extra__,  # type: ignore
         batch_size=config.global_batch_size,
         vocab_size=vocab_size,
-        seq_len=seq_len,
-        num_puzzle_identifiers=0, # Required till we remove it from model
         causal=True # Enable autoregressive modeling [working]
     )
 
