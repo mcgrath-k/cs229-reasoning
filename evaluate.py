@@ -27,7 +27,6 @@ def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
     batch = {
         "inputs": current_tensor,
         "labels": current_tensor,  # Dummy labels for generation
-        "puzzle_identifiers": torch.zeros_like(current_tensor, dtype=torch.long)
     }
     with torch.device(device):
         carry = model.initial_carry(batch)
@@ -100,7 +99,6 @@ def evaluate_model(model, val_loader, device, num_batches=None):
             model_batch = {
                 "inputs": batch["input_ids"],
                 "labels": batch["labels"],
-                "puzzle_identifiers": torch.zeros_like(batch["input_ids"], dtype=torch.long)
             }
             
             with torch.device(device):

@@ -115,8 +115,6 @@ def launch(hydra_config: DictConfig):
             model_batch = {
                 "inputs": batch["input_ids"],
                 "labels": batch["labels"],
-                # make puzzle identifiers all zeros since we dont use them
-                "puzzle_identifiers": torch.zeros_like(batch["input_ids"], dtype=torch.long)
             }
 
             # for now, we re-initialize carry every batch
