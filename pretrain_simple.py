@@ -115,7 +115,7 @@ def launch(hydra_config: DictConfig):
             model_batch = {
                 "inputs": batch["input_ids"],
                 "labels": batch["labels"],
-                # make puzzle identifiers all zeros since we dont use them
+                # make puzzle identifiers all zeros since we dont use them -- TODO: remove since not used
                 "puzzle_identifiers": torch.zeros_like(batch["input_ids"], dtype=torch.long)
             }
 
@@ -124,41 +124,95 @@ def launch(hydra_config: DictConfig):
 
             # Initialize carry
             with torch.device(device):
-                train_state.carry = train_state.model.initial_carry(model_batch)
+                carry = train_state.model.initial_carry(model_batch)
 
-            # forward
-            new_carry, loss, metrics, output, halted = train_state.model(carry=train_state.carry, batch=model_batch, return_keys=["logits", "preds"])
+            # ACT loop
 
-            # backward
-            train_state.optimizer.zero_grad()
-            loss.backward()
+            all_halted = False
+            act_step = 0
+            batch_metrics = None
 
-            # step optimizer lr
-            lr_this_step = compute_lr(train_state.optimizer_lr, config, train_state)
-            for param_group in train_state.optimizer.param_groups:
-                param_group["lr"] = lr_this_step
-            train_state.optimizer.step()
+            # loop until all sequences have halted or max steps reached
+            while not all_halted and act_step < train_state.model.config.max_steps:
 
-            # training metrics
-            epoch_metrics["loss"] += loss.item()
-            for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "steps", "count"]:
-                if k in metrics:
-                    epoch_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
+                # forward
+                carry, loss, metrics, output, all_halted = train_state.model(carry=carry, batch=model_batch, return_keys=["logits", "preds"])
 
-            if batch_idx % 10 == 0:
+                # backward
+                train_state.optimizer.zero_grad()
+                loss.backward()
+
+                # step optimizer lr
+                lr_this_step = compute_lr(train_state.optimizer_lr, config, train_state)
+                for param_group in train_state.optimizer.param_groups:
+                    param_group["lr"] = lr_this_step
+                train_state.optimizer.step()
+
+                # accululate metrics for halted sequence
+                if batch_metrics is None:
+                    batch_metrics = {
+                        k: (v.item() if torch.is_tensor(v) else v) 
+                        for k, v in metrics.items()
+                    }
+                else:
+                    for k, v in metrics.items():
+                        batch_metrics[k] += v.item() if torch.is_tensor(v) else v
+
+                train_state.step += 1
+                act_step += 1
+
+                ### ACT STEP LEVEL LOGGING  
+
+                if train_state.step % config.save_interval == 0 and train_state.step > 0:
+                    train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
+
+                if train_state.step % config.eval_interval == 0 and train_state.step > 0:
+                    val_metrics = evaluate_model(
+                        train_state.model, 
+                        val_loader, 
+                        device,
+                        halt_max_steps=config.arch.halt_max_steps,
+                        num_batches=128
+                    )
+                    val_metrics_log = {f"val/{k}": v for k, v in val_metrics.items()}
+                    wandb.log(val_metrics_log, step=train_state.step)
+                    
+                    print(f"\n[Validation] Step {train_state.step}")
+                    print(f"  Val Loss: {val_metrics['lm_loss']:.4f}")
+                    print(f"  Val Accuracy: {val_metrics['accuracy_pct']:.4f}")
+                    print(f"  Val Exact Accuracy: {val_metrics['exact_accuracy_pct']:.4f}")
+                    print(f"  Val Avg Steps: {val_metrics['steps']:.2f}\n")
+
+            # update epoch metrics
+            count = batch_metrics.get("count", 0.0)
+            if count > 0:
+                for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "q_halt_accuracy", "steps"]:
+                    epoch_metrics[k] += batch_metrics[k]
+                epoch_metrics["count"] += count
+                epoch_metrics["act_iterations"] += act_step
+
+            ### BATCH LEVEL LOGGING
+            if (batch_idx + 1) % 10 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f}")
 
-            if train_state.step % config.save_interval == 0 and train_state.step > 0:
-                train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
-
-            if train_state.step % config.eval_interval == 0 and train_state.step > 0: # type: ignore
-                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=128)
-                val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
-                wandb.log(val_metrics, step=train_state.step)
-
-            train_metrics = {f"train/{k}": v for k, v in metrics.items()}
-            wandb.log(train_metrics, step=train_state.step)
-            train_state.step += 1
+                batch_loss = batch_metrics["lm_loss"] / count if count > 0 else 0
+                batch_acc = batch_metrics["accuracy"] / count if count > 0 else 0
+                batch_exact_acc = batch_metrics["exact_accuracy"] / count if count > 0 else 0
+                
+                print(f"Epoch {epoch} | Batch {batch_idx + 1}/{len(train_loader)} | "
+                    f"Step: {train_state.step} | LR: {lr_this_step:.8f} | "
+                    f"Loss: {batch_loss:.4f} | Acc: {batch_acc:.4f} | "
+                    f"ExactAcc: {batch_exact_acc:.4f} | ACT: {act_step}")
+                
+                # am i doing this too often? 
+                wandb.log({
+                    "train/batch_loss": batch_loss,
+                    "train/batch_accuracy": batch_acc,
+                    "train/batch_exact_accuracy": batch_exact_acc,
+                    "train/batch_act_steps": act_step,
+                    "train/lr": lr_this_step,
+                }, step=train_state.step)
+            
     
         train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
         # Final epoch metrics

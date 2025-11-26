@@ -209,10 +209,16 @@ class TinyRecursiveReasoningModel_ACTV1(nn.Module):
     def forward(self, carry: TinyRecursiveReasoningModel_ACTV1Carry, batch: Dict[str, torch.Tensor]) -> Tuple[TinyRecursiveReasoningModel_ACTV1Carry, Dict[str, torch.Tensor]]:
 
         # Update data, carry (removing halted sequences)
+        # if halted, z_H[i] = H_init, z_L[i] = L_init (fresh start)
+        # else, z_H[i], z_L[i] unchanged (continue reasoning)
         new_inner_carry = self.inner.reset_carry(carry.halted, carry.inner_carry)
         
+        # step count = 0 if halted else carry.steps
         new_steps = torch.where(carry.halted, 0, carry.steps)
 
+        # if halted, current_data[i] = batch[i] (new input)
+        # else, current_data[i] = carry.current_data[i] (continue with previous input)
+        # so new current data has 
         new_current_data = {k: torch.where(carry.halted.view((-1, ) + (1, ) * (batch[k].ndim - 1)), batch[k], v) for k, v in carry.current_data.items()}
 
         # Forward inner model
@@ -237,6 +243,7 @@ class TinyRecursiveReasoningModel_ACTV1(nn.Module):
                 # Halt signal
                 # NOTE: During evaluation, always use max steps, this is to guarantee the same halting steps inside a batch for batching purposes
                 
+                # Halt if Q-head says we should halt
                 if self.config.no_ACT_continue:
                     halted = halted | (q_halt_logits > 0)
                 else:
