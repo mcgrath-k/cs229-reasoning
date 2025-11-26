@@ -45,10 +45,6 @@ class PretrainConfig(pydantic.BaseModel):
     beta1: float
     beta2: float
 
-    # Puzzle embedding
-    puzzle_emb_lr: float
-    puzzle_emb_weight_decay: float
-
     # Names
     project_name: Optional[str] = None
     run_name: Optional[str] = None
@@ -75,14 +71,3 @@ class TrainState:
     carry: Any
     step: int
     total_steps: int
-
-
-
-class PuzzleDatasetConfig(pydantic.BaseModel):
-    seed: int
-    dataset_paths: List[str]
-    global_batch_size: int
-    test_set_mode: bool
-    epochs_per_iter: int  # Batch X epochs in an iteration to reduce overhead.
-    rank: int
-    num_replicas: int

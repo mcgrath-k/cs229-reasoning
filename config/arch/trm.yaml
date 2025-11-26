@@ -21,13 +21,8 @@ expansion: 4
 
 fixed_dim: 5
 
-# puzzle_emb_ndim: ${.hidden_size}
-puzzle_emb_ndim: 0 # no puzzle embeddings
-
 pos_encodings: rope
 forward_dtype: bfloat16
 
 mlp_t: False # use mlp on L instead of transformer
-# puzzle_emb_len: 16 # if non-zero, its specified to this value
-puzzle_emb_len: 0 # no puzzle embeddings
 no_ACT_continue: True # No continue ACT loss, only use the sigmoid of the halt which makes much more sense

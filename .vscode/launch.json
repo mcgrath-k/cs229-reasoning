@@ -22,26 +22,6 @@
       "console": "integratedTerminal"
     },
     {
-      "name": "Train Example Sudoku Model",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "pretrain.py",
-      "env": {
-        "OMP_NUM_THREADS": "8"
-      },
-      "args": [
-        "data_path=data/sudoku-extreme-1k-aug-1000",
-        "epochs=20000",
-        "global_batch_size=384",
-        "lr=7e-5",
-        "puzzle_emb_lr=7e-5",
-        "weight_decay=1.0",
-        "puzzle_emb_weight_decay=1.0"
-      ],
-      "console": "integratedTerminal",
-      "justMyCode": false,
-    },
-    {
       "name": "Run pretraining addition",
       "type": "debugpy",
       "request": "launch",
