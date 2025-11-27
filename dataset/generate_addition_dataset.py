@@ -76,18 +76,19 @@ class AdditionDataset():
                 B = generate_n_length_integer(j)
                 C = A + B
                 
+                # Designate [EOT] as "End of Thinking"
                 if self.thinking_tokens:
-                    insert_string = f":{'.' * self.thinking_tokens}:"
+                    thinking_string = f"{'*' * self.thinking_tokens}:" # Use ":" as identifier for [EOT]
                 else:
-                    insert_string = ""
-                example = f"{A}+{B}{insert_string}="
+                    thinking_string = ""
+                example = f"{A}+{B}="
 
 
                 rows.append({
                         "prompt": example,
                         "operand_len_a": i,
                         "operand_len_b": j,
-                        "answer": str(C),
+                        "answer": thinking_string + str(C),
                     })
                 
         ds = Dataset.from_list(rows)
@@ -99,11 +100,11 @@ def build_train_val_test_dataset(train_range =(1,20),
                                  test_range=(21,200), 
                                  total_train_samples=1_000_000, 
                                  test_samples_per_pair=10,
-                                 thinking_tokens=0):
+                                 thinking_tokens=10):
     assert train_range == val_range, "Split not supported"
 
-    train_val_gen = AdditionDataset(train_range[0], train_range[1], total_samples=total_train_samples)
-    test_gen= AdditionDataset(test_range[0], test_range[1], samples_per_pair=test_samples_per_pair)
+    train_val_gen = AdditionDataset(train_range[0], train_range[1], total_samples=total_train_samples, thinking_tokens=thinking_tokens)
+    test_gen= AdditionDataset(test_range[0], test_range[1], samples_per_pair=test_samples_per_pair, thinking_tokens=thinking_tokens)
 
     print("Generating train examples")
     train_val_ds = train_val_gen.generate_examples()
@@ -115,7 +116,7 @@ def build_train_val_test_dataset(train_range =(1,20),
     split = train_val_ds.train_test_split(test_size=0.10, seed=SEED)
 
     return DatasetDict({
-        "train": split["train"],
+         "train": split["train"],
         "val": split["test"],
         "test": test_ds
     })
