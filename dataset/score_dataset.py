@@ -6,7 +6,7 @@ from tqdm import tqdm
 from datasets import Dataset, DatasetDict, load_from_disk
 
 
-def addition_max_length(example):
+def max_len(example):
 
     '''
     example: row from dataset
@@ -18,10 +18,35 @@ def addition_max_length(example):
     #   operands_list = example['prompt'].replace("=", "").split('+')
     #       for max length score would be:
     #   difficulty = max([len(operand) for operand in operands_list])
-    METRIC = '_max_len'
     difficulty = max([example['operand_len_a'], example['operand_len_b']])
     return difficulty
     
+def add_carries(example):
+    operands_list = example['prompt'].replace("=", "").split('+')
+    # store operands in variables longer and shorter, and reverse names if necessary
+    a = operands_list[0]
+    b = operands_list[1]    
+    answer = example['answer']
+    length = len(answer)
+    # Pad the shorter operand with leading zeros
+    a = '0' * (len(answer)- len(a)) + a
+    b = '0' * (len(answer)- len(b)) + b
+    # Get the individual digits of each operand and answer in lists
+    a_as_list = [int(character) for character in a]
+    b_as_list = [int(character) for character in b]
+    answer_as_list = [int(character) for character in answer]
+
+    # Compute digit sums mod 10
+    digit_sum_mod_10  = [(a_as_list[i] + b_as_list[i])%10 
+                                for i in range(len(answer))]
+    # Compute diffs 
+    diffs_mod_10 = [(answer_as_list[i] - digit_sum_mod_10[i])%10 
+                                for i in range(len(answer_as_list))]
+    # Number of carries is how many diffs list elements are nonzero
+    carries = sum([diffs_mod_10[i] !=0
+                                for i in range(len(answer_as_list))])
+    
+    return carries
 
 def score_data(data, metric):
     """
@@ -35,7 +60,6 @@ def score_data(data, metric):
     difficulties = np.zeros(len(data))-1
     for i in range(len(data)):
         difficulties[i] = metric(data[i])
-
     return difficulties 
 
 def score_dataset(dataset, metric):
@@ -46,28 +70,35 @@ def score_dataset(dataset, metric):
         metric (_type_): takes an example and returns an integer 
     """
     print(f"metric is {metric}")
-
+    segment_max_difficulties = []
     for segment in dataset:
         # Compute difficulties and append to dataset
         difficulties = score_data(dataset[segment], metric)
         dataset[segment] = dataset[segment].add_column('difficulty', difficulties)
-        print(f"Done scoring {segment}")
+
+        max_diff = np.max(difficulties)
+        segment_max_difficulties.append(max_diff)
+
+        print(f"Done scoring {segment}, max unnormalized difficulty {max_diff}")
 
     return dataset 
-
+ 
 ### TO Do: make sure the path makes sense with the file name
 def save_dataset_to_disk(dataset_dict, save_dir):
     os.makedirs(save_dir, exist_ok=True)
     dataset_dict.save_to_disk(save_dir)
     print("Saved Huggingface Dataset to disk")
 
+######### SET THESE VARIABLES !!!!!!!!!!!!!! ###############
 DATASET_PATH = 'data/addition_dataset'
-# METRIC is set in the call of the metric function used
-METRIC = ''
+METRIC = add_carries
 
 if __name__== '__main__':
-
+    ### Set path and metric above before running
+    metric_name = getattr(METRIC, "__name__", str(METRIC))
+    print(f"metric name is {metric_name}")
     dataset_dict = load_from_disk(DATASET_PATH)
-    scored_dataset = score_dataset(dataset_dict, addition_max_length)
-    save_dir = DATASET_PATH + '_scored' + METRIC
+
+    scored_dataset = score_dataset(dataset_dict, METRIC)
+    save_dir = DATASET_PATH + '_scored_' + metric_name
     save_dataset_to_disk(scored_dataset, save_dir)
