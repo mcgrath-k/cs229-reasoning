@@ -143,6 +143,13 @@ def launch(hydra_config: DictConfig):
                 train_state.optimizer.zero_grad()
                 loss.backward()
 
+                # gradient clipping
+                grad_norm = torch.nn.utils.clip_grad_norm_(train_state.model.parameters(), max_norm=1.0)
+
+                # log grad norm for debugging
+                if act_step == 0:
+                    wandb.log({"train/grad_norm": grad_norm.item()}, step=train_state.step)
+
                 # step optimizer lr
                 lr_this_step = compute_lr(train_state.optimizer_lr, config, train_state)
                 for param_group in train_state.optimizer.param_groups:
