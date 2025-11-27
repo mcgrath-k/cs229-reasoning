@@ -107,7 +107,8 @@ def launch(hydra_config: DictConfig):
             "accuracy": 0.0,
             "exact_accuracy": 0.0,
             "steps": 0.0,
-            "count": 0.0
+            "count": 0.0,
+            "act_iterations": 0.0
         }
 
         for batch_idx, batch in enumerate(train_loader):
@@ -133,7 +134,7 @@ def launch(hydra_config: DictConfig):
             batch_metrics = None
 
             # loop until all sequences have halted or max steps reached
-            while not all_halted and act_step < train_state.model.config.max_steps:
+            while not all_halted and act_step < config.arch.halt_max_steps:
 
                 # forward
                 carry, loss, metrics, output, all_halted = train_state.model(carry=carry, batch=model_batch, return_keys=["logits", "preds"])
@@ -186,8 +187,11 @@ def launch(hydra_config: DictConfig):
             # update epoch metrics
             count = batch_metrics.get("count", 0.0)
             if count > 0:
-                for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "q_halt_accuracy", "steps"]:
-                    epoch_metrics[k] += batch_metrics[k]
+                for k, v in batch_metrics.items():
+                    if k not in ["count"]:  # Don't double-count
+                        if k not in epoch_metrics:
+                            epoch_metrics[k] = 0
+                        epoch_metrics[k] += v
                 epoch_metrics["count"] += count
                 epoch_metrics["act_iterations"] += act_step
 

@@ -1,12 +1,11 @@
 import torch
 from train_utils import load_checkpoint
 from datasets import load_from_disk
+from typing import List
 
 from torch.utils.data import DataLoader
 
 from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTokenizer, dynamic_padding_collate_fn
-
-
 
 
 def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
@@ -150,6 +149,118 @@ def evaluate_model(model, val_loader, device, halt_max_steps, num_batches=None):
     model.train()
     return total_metrics
 
+
+def generate_answer(
+    model,
+    prompt_tokens: List[int],
+    tokenizer,
+    device: torch.device,
+    max_answer_len: int = None,
+    halt_max_steps: int = None
+) -> List[int]:
+    """
+    Generate answer tokens autoregressively with persistent carry state.
+    
+    Args:
+        model: The TRM model
+        prompt_tokens: List of token IDs for the prompt (e.g., "123+456=")
+        tokenizer: Tokenizer with token_to_id dict
+        device: Device to run on
+        max_answer_len: Maximum answer length (defaults to config value)
+        halt_max_steps: Maximum ACT steps (defaults to config value)
+    
+    Returns:
+        List of generated token IDs (without EOS)
+    """
+    model.eval()
+    
+    # Use config defaults if not specified
+    if max_answer_len is None:
+        max_answer_len = model.config.generation_max_answer_len
+    if halt_max_steps is None:
+        halt_max_steps = model.config.halt_max_steps
+    
+    pad_token_id = tokenizer.token_to_id["[PAD]"]
+    eos_token_id = tokenizer.token_to_id["[EOS]"]
+    
+    # Pre-allocate space: prompt + max answer length
+    max_total_len = len(prompt_tokens) + max_answer_len
+    input_ids = prompt_tokens + [pad_token_id] * max_answer_len
+    input_ids = torch.tensor([input_ids], dtype=torch.long, device=device)
+    
+    # Create batch
+    batch = {
+        "inputs": input_ids,
+        "labels": torch.full_like(input_ids, -100)  # Not used during generation
+    }
+    
+    # Initialize carry ONCE with full length
+    with torch.no_grad():
+        with torch.device(device):
+            carry = model.initial_carry(batch)
+        
+        current_pos = len(prompt_tokens)
+        generated = []
+        
+        for gen_step in range(max_answer_len):
+            # ACT loop: model "thinks" about current state
+            all_halted = False
+            
+            for act_step in range(halt_max_steps):
+                carry, _, _, outputs, all_halted = model(
+                    carry=carry,
+                    batch=batch,
+                    return_keys=["logits"]
+                )
+                if all_halted:
+                    break
+            
+            # Get logits for current position
+            # Note: -1 because model predicts next token (autoregressive shift)
+            logits = outputs["logits"][0, current_pos - 1, :]
+            next_token = torch.argmax(logits).item()
+            
+            # Check for end of sequence
+            if next_token == eos_token_id:
+                break
+            
+            generated.append(next_token)
+            
+            # Update input at next position (in-place, no shape change!)
+            input_ids[0, current_pos] = next_token
+            current_pos += 1
+            
+            # Update batch with new input (carry persists automatically)
+            batch["inputs"] = input_ids
+            
+            # Carry state persists with same shape throughout!
+    
+    return generated
+
+
+def generate_answer_string(
+    model,
+    prompt_str: str,
+    tokenizer,
+    device: torch.device,
+    **kwargs
+) -> str:
+    """
+    Convenience function that handles tokenization and decoding.
+    
+    Args:
+        model: The TRM model
+        prompt_str: Prompt string (e.g., "123+456=")
+        tokenizer: Tokenizer
+        device: Device to run on
+        **kwargs: Additional arguments for generate_answer
+    
+    Returns:
+        Generated answer as string (e.g., "579")
+    """
+    prompt_tokens = tokenizer.encode(prompt_str)
+    generated_tokens = generate_answer(model, prompt_tokens, tokenizer, device, **kwargs)
+    return tokenizer.decode(generated_tokens)
 
 
 
