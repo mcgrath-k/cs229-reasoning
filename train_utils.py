@@ -29,7 +29,7 @@ def create_model(config: PretrainConfig, vocab_size):
 
     model_cfg = dict(
         **config.arch.__pydantic_extra__,  # type: ignore
-        batch_size=config.global_batch_size,
+        batch_size=config.batch_size,
         vocab_size=vocab_size,
         causal=True # Enable autoregressive modeling [working]
     )

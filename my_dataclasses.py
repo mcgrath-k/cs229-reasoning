@@ -33,7 +33,7 @@ class PretrainConfig(pydantic.BaseModel):
     evaluators: List[EvaluatorConfig] = []
 
     # Hyperparams
-    global_batch_size: int
+    batch_size: int
     epochs: int
 
     lr: float

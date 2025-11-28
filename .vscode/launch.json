@@ -29,8 +29,8 @@
       // removed omp num threads, not sure the use yet.
       "args": [
         "epochs=20000",
-        "global_batch_size=384",
-        "lr=7e-5",
+        "batch_size=64",
+        "lr=5e-4",
         "weight_decay=1.0",
       ],
       "console": "integratedTerminal",
