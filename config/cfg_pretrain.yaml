@@ -17,10 +17,7 @@ evaluators:
 project_name: arithmetic
 
 # Hyperparams - Training
-# [kmcgrath]: This gets removed in future updates...
-global_batch_size: 768
-
-batch_size: 64 # <- [kmcgrath]: our actual batch_size!!
+batch_size: 768
 
 
 epochs: 100000

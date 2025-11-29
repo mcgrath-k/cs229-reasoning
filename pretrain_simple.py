@@ -25,10 +25,7 @@ from evaluate import evaluate_model
 DATASET_PATH = "data/addition_dataset_big_scored_max_len"
 
 
-def init_train_state(config: PretrainConfig, vocab_size):
-    # Estimated total training steps
-    total_steps = int(config.epochs / config.global_batch_size)
-
+def init_train_state(config: PretrainConfig, vocab_size, total_steps: int):
     # Model
     model, optimizer, optimizer_lr = train_utils.create_model(config, vocab_size)
 
@@ -41,18 +38,8 @@ def init_train_state(config: PretrainConfig, vocab_size):
         carry=None
     )
 
-
-def cosine_schedule_with_warmup_lr_lambda(
-    current_step: int, *, base_lr: float, num_warmup_steps: int, num_training_steps: int, min_ratio: float = 0.0, num_cycles: float = 0.5
-):
-    if current_step < num_warmup_steps:
-        return base_lr * float(current_step) / float(max(1, num_warmup_steps))
-
-    progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
-    return base_lr * (min_ratio + max(0.0, (1 - min_ratio) * 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress))))
-
 def compute_lr(base_lr: float, config: PretrainConfig, train_state: TrainState):
-    return cosine_schedule_with_warmup_lr_lambda(
+    return train_utils.cosine_schedule_with_warmup_lr_lambda(
         current_step=train_state.step,
         base_lr=base_lr,
         num_warmup_steps=round(config.lr_warmup_steps),
@@ -102,8 +89,11 @@ def launch(hydra_config: DictConfig):
 
     vocab_size = len(tokenizer)
 
+    steps_per_epoch = len(train_loader)
+    total_steps = steps_per_epoch * config.epochs
+
     # Encapsulate model and iterative data in a single state dataclass
-    train_state = init_train_state(config, vocab_size=vocab_size)
+    train_state = init_train_state(config, vocab_size=vocab_size, total_steps=total_steps)
 
     wandb.init(project=config.project_name, name=config.run_name, config=config.model_dump(), settings=wandb.Settings(_disable_stats=True))  # type: ignore
     wandb.log({"num_params": sum(x.numel() for x in train_state.model.parameters())}, step=0)
@@ -111,6 +101,8 @@ def launch(hydra_config: DictConfig):
     # move model to GPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_state.model.to(device)
+
+    examples_seen = 0
 
     # Train
     print(f"Starting training with {len(train_ds)} training samples.")
@@ -129,6 +121,11 @@ def launch(hydra_config: DictConfig):
 
         for batch_idx, batch in enumerate(train_loader):
             batch = {k: v.to(device) for k, v in batch.items()}
+
+            # Track current batch size and update examples_seen
+            batch_size = batch['input_ids'].size(0)
+            examples_seen += batch_size
+
             model_batch = {
                 "inputs": batch["input_ids"],
                 "labels": batch["labels"],
@@ -160,16 +157,20 @@ def launch(hydra_config: DictConfig):
                 if k in metrics:
                     epoch_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
 
+            # Report to terminal
             if batch_idx % 10 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f} | Difficulty: {train_sampler.curr_difficulty}")
 
+            # Save checkpoint
             if train_state.step % config.save_interval == 0 and train_state.step > 0:
                 train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
 
+            # Run validation
             if train_state.step % config.eval_interval == 0 and train_state.step > 0: # type: ignore
                 print(f"Evaluating: Step {train_state.step} | Difficulty: {val_sampler.curr_difficulty}")
                 total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=None) # [kmcgrath] TODO: Double check what num_batches does.
                 val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
+                val_metrics['examples_seen'] = examples_seen
                 wandb.log(val_metrics, step=train_state.step)
 
                 # Curriculum learning
@@ -179,6 +180,8 @@ def launch(hydra_config: DictConfig):
                     val_sampler.update_difficulty(curr_difficulty)
 
             train_metrics = {f"train/{k}": v for k, v in metrics.items()}
+            # Use examples seen as X-axis in WandB to make runs comparable.
+            train_metrics['examples_seen'] = examples_seen
             wandb.log(train_metrics, step=train_state.step)
             train_state.step += 1
     
