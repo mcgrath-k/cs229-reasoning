@@ -82,8 +82,8 @@ def launch(hydra_config: DictConfig):
 
     curr_difficulty = 1
     # Setup curriculum learning with difficulty sampler
-    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty)
-    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty)
+    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty, name="Train")
+    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty, name="Val")
 
     # Create DataLoaders with dynamic padding
     train_loader = DataLoader(
@@ -168,14 +168,12 @@ def launch(hydra_config: DictConfig):
 
             if train_state.step % config.eval_interval == 0 and train_state.step > 0: # type: ignore
                 print(f"Evaluating: Step {train_state.step} | Difficulty: {val_sampler.curr_difficulty}")
-                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=config.batch_size)
+                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=None) # [kmcgrath] TODO: Double check what num_batches does.
                 val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
                 wandb.log(val_metrics, step=train_state.step)
 
                 # Curriculum learning
-                # TODO: Model hasn't learned this far. Might break.
-                accuracy = epoch_metrics['accuracy'] / epoch_metrics['count']
-                if accuracy >= 0.9:
+                if total_metrics.get('accuracy_pct', 0.0) >= 0.9:
                     curr_difficulty += 1
                     train_sampler.update_difficulty(curr_difficulty)
                     val_sampler.update_difficulty(curr_difficulty)
