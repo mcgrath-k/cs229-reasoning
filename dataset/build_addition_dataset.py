@@ -1,10 +1,68 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Sampler
 from datasets import load_from_disk
 
 DATASET_PATH = "data/addition_dataset"
 VOCAB_CHARS = list("0123456789+=")
 SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
+
+
+class DifficultySampler(Sampler):
+    """Samples examples based on difficulty threshold for curriculum learning."""
+
+    def __init__(self, torch_dataset, starting_difficulty):
+        """
+
+        torch_dataset.dataset   -> underlying HF Dataset loaded as .arrow
+        torch_dataset.tokenizer -> tokenizer
+
+        Args:
+            torch_dataset (_type_): _description_
+            starting_difficulty (_type_): _description_
+        """
+        self.difficulties = self.load_difficulty_tensor(torch_dataset.dataset)
+    
+        # Set starting difficulty & print this
+        self.update_difficulty(starting_difficulty)
+        self.filtered = None
+
+    def load_difficulty_tensor(self, ds, col="difficulty", dtype=torch.uint8):
+        # Load column chunks one by one
+        # Computing list(dataset['difficulty]) too expensive
+        chunks = []
+        # Arbitrary batch size, this is for efficiency / hence hardcoded
+        for batch in ds.iter(batch_size=65536): 
+            chunks.append(torch.tensor(batch[col], dtype=dtype))
+        return torch.cat(chunks)
+    
+
+    def update_difficulty(self, new_difficulty):
+        self.curr_difficulty = new_difficulty
+        count = int((self.difficulties <= self.curr_difficulty).sum().item())
+
+        # Create mask
+        self.mask = self.difficulties <= self.curr_difficulty
+        # return indices where mask == True
+        self.idxs = self.mask.nonzero(as_tuple=True)[0]
+
+        self.length = int((self.difficulties <= self.curr_difficulty).sum().item())
+        
+        print(f"Sampler: Running at difficulty {new_difficulty} with {count} examples")
+
+
+    def __iter__(self):
+
+        # If threshold is too low, return an empty iterator.
+        if len(self.idxs) == 0:
+            return iter(())
+        
+        # Generate a random permutation of the integers
+        perm = torch.randperm(len(self.idxs))
+        for i in perm:
+            yield self.idxs[i].item()
+
+    def __len__(self):
+        return self.length
 
 
 class ArithmeticTokenizer:
@@ -58,12 +116,15 @@ class ArithmeticTorchDataset(Dataset):
         if prompt_len > 1:
             labels[:prompt_len-1] = IGNORE
 
-        return {
+        result = {
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
             "labels": torch.tensor(labels, dtype=torch.long),
             "operand_len_a": torch.tensor(item["operand_len_a"]),
             "operand_len_b": torch.tensor(item["operand_len_b"]),
+            "difficulty": torch.tensor(item['difficulty'])
         }
+
+        return result
 
 def dynamic_padding_collate_fn(batch):
     """
@@ -75,12 +136,13 @@ def dynamic_padding_collate_fn(batch):
     labels = [b["labels"] for b in batch]
     operand_len_a = torch.stack([b["operand_len_a"] for b in batch])
     operand_len_b = torch.stack([b["operand_len_b"] for b in batch])
+    difficulty = torch.stack([b["difficulty"] for b in batch])
 
     # Compute max lengths in this batch
     # max_input_len = max(x.size(0) for x in input_ids)
     # max_label_len = max(x.size(0) for x in labels)
     # pad everything to 1000 since we set seq_len=1000 in launch fn
-    max_seq_len = 1000
+    max_seq_len = 200
 
     def pad_sequence(seq_list, max_len):
         padded = []
@@ -100,6 +162,7 @@ def dynamic_padding_collate_fn(batch):
         "labels": padded_labels,
         "operand_len_a": operand_len_a,
         "operand_len_b": operand_len_b,
+        "difficulty": difficulty
     }
 
 def main():

@@ -57,10 +57,11 @@ def score_data(data, metric):
     return 1D numpy array of difficulty scores
     """
     
-    difficulties = np.zeros(len(data))-1
-    for i in range(len(data)):
-        difficulties[i] = metric(data[i])
-    return difficulties 
+    difficulties = np.zeros(len(data)) - 1
+    for i, example in tqdm(enumerate(data), total=len(data)):
+        difficulties[i] = metric(example)
+
+    return difficulties
 
 def score_dataset(dataset, metric):
     """
@@ -72,6 +73,7 @@ def score_dataset(dataset, metric):
     print(f"metric is {metric}")
     segment_max_difficulties = []
     for segment in dataset:
+        print(f"Scoring split: {segment}")
         # Compute difficulties and append to dataset
         difficulties = score_data(dataset[segment], metric)
         dataset[segment] = dataset[segment].add_column('difficulty', difficulties)
@@ -90,8 +92,8 @@ def save_dataset_to_disk(dataset_dict, save_dir):
     print("Saved Huggingface Dataset to disk")
 
 ######### SET THESE VARIABLES !!!!!!!!!!!!!! ###############
-DATASET_PATH = 'data/addition_dataset'
-METRIC = add_carries
+DATASET_PATH = 'data/addition_dataset_big'
+METRIC = max_len
 
 if __name__== '__main__':
     ### Set path and metric above before running
