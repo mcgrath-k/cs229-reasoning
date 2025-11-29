@@ -34,8 +34,6 @@ class TinyRecursiveReasoningModel_ACTV1Config(BaseModel):
     max_seq_len: int
     vocab_size: int
 
-    # [kmcgrath]: added
-    fixed_dim: int
     causal: bool
 
     H_cycles: int
