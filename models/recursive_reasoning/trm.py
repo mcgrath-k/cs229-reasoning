@@ -207,14 +207,18 @@ class TinyRecursiveReasoningModel_ACTV1(nn.Module):
     def forward(self, carry: TinyRecursiveReasoningModel_ACTV1Carry, batch: Dict[str, torch.Tensor]) -> Tuple[TinyRecursiveReasoningModel_ACTV1Carry, Dict[str, torch.Tensor]]:
 
         # Update data, carry (removing halted sequences)
+        # Reset inner carry for sequences that were halted before this call
         new_inner_carry = self.inner.reset_carry(carry.halted, carry.inner_carry)
-        
+
+        # Reset steps for those same sequences
         new_steps = torch.where(carry.halted, 0, carry.steps)
 
+        # Update current_data in carry
         new_current_data = {k: torch.where(carry.halted.view((-1, ) + (1, ) * (batch[k].ndim - 1)), batch[k], v) for k, v in carry.current_data.items()}
 
         # Forward inner model
         new_inner_carry, logits, (q_halt_logits, q_continue_logits) = self.inner(new_inner_carry, new_current_data)
+
 
         outputs = {
             "logits": logits,
@@ -223,7 +227,7 @@ class TinyRecursiveReasoningModel_ACTV1(nn.Module):
         }
 
         with torch.no_grad():
-            # Step
+            # Compute halting flags for next call
             new_steps = new_steps + 1
             is_last_step = new_steps >= self.config.halt_max_steps
             
