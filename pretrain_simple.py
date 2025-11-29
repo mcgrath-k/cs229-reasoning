@@ -14,13 +14,15 @@ from datasets import load_from_disk
 
 ## Project imports
 import train_utils
-from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTokenizer, dynamic_padding_collate_fn
+from dataset.build_addition_dataset import (
+    ArithmeticTorchDataset, ArithmeticTokenizer, dynamic_padding_collate_fn, DifficultySampler
+)
 from my_dataclasses import PretrainConfig, TrainState
 
 from evaluate import evaluate_model
 
 
-DATASET_PATH = "data/addition_dataset"
+DATASET_PATH = "data/addition_dataset_big_scored_max_len"
 
 
 def init_train_state(config: PretrainConfig, vocab_size, seq_len):
@@ -72,19 +74,34 @@ def launch(hydra_config: DictConfig):
     dataset_dict = load_from_disk(DATASET_PATH)
     tokenizer = ArithmeticTokenizer()
 
-
     # Wrap splits as PyTorch Datasets
     train_ds = ArithmeticTorchDataset(dataset_dict["train"], tokenizer)
     val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer)
     test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
 
+
+    curr_difficulty = 1
+    # Setup curriculum learning with difficulty sampler
+    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty)
+    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty)
+
     # Create DataLoaders with dynamic padding
-    train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, collate_fn=dynamic_padding_collate_fn)
-    val_loader = DataLoader(val_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
-    test_loader = DataLoader(test_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=config.batch_size,
+        sampler=train_sampler, # Curriculum sampler for training
+        # shuffle=True, # Cannot be used with sampler, shuffle inside sampler.
+        collate_fn=dynamic_padding_collate_fn
+    )
+    val_loader = DataLoader(val_ds,
+                            batch_size=config.batch_size,
+                            sampler=val_sampler,
+                            collate_fn=dynamic_padding_collate_fn)
+    
+    test_loader = DataLoader(test_ds, batch_size=config.batch_size, collate_fn=dynamic_padding_collate_fn)
 
     vocab_size = len(tokenizer)
-    seq_len = 1000# 1000 felt like overkill for addition
+    seq_len = 200# 1000 felt like overkill for addition
 
     # Encapsulate model and iterative data in a single state dataclass
     train_state = init_train_state(config, vocab_size=vocab_size, seq_len=seq_len) 
@@ -147,15 +164,24 @@ def launch(hydra_config: DictConfig):
                     epoch_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
 
             if batch_idx % 10 == 0:
-                print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f}")
+                print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f} | Difficulty: {train_sampler.curr_difficulty}")
 
             if train_state.step % config.save_interval == 0 and train_state.step > 0:
                 train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
 
             if train_state.step % config.eval_interval == 0 and train_state.step > 0: # type: ignore
-                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=128)
+                print(f"Evaluating: Step {train_state.step} | Difficulty: {val_sampler.curr_difficulty}")
+                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=config.batch_size)
                 val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
                 wandb.log(val_metrics, step=train_state.step)
+
+                # Curriculum learning
+                # TODO: Model hasn't learned this far. Might break.
+                accuracy = epoch_metrics['accuracy'] / epoch_metrics['count']
+                if accuracy >= 0.9:
+                    curr_difficulty += 1
+                    train_sampler.update_difficulty(curr_difficulty)
+                    val_sampler.update_difficulty(curr_difficulty)
 
             train_metrics = {f"train/{k}": v for k, v in metrics.items()}
             wandb.log(train_metrics, step=train_state.step)

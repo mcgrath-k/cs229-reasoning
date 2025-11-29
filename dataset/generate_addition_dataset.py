@@ -97,7 +97,7 @@ class AdditionDataset():
 def build_train_val_test_dataset(train_range =(1,20), 
                                  val_range=(1,20), 
                                  test_range=(21,200), 
-                                 total_train_samples=1_000_000, 
+                                 total_train_samples=20_000_000, 
                                  test_samples_per_pair=10,
                                  thinking_tokens=0):
     assert train_range == val_range, "Split not supported"
@@ -120,7 +120,7 @@ def build_train_val_test_dataset(train_range =(1,20),
         "test": test_ds
     })
 
-def save_dataset_to_disk(dataset_dict, save_dir='data/addition_dataset'):
+def save_dataset_to_disk(dataset_dict, save_dir='data/addition_dataset_big'):
     os.makedirs(save_dir, exist_ok=True)
     dataset_dict.save_to_disk(save_dir)
     print("Saved Huggingface Dataset to disk")
