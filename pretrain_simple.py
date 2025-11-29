@@ -25,12 +25,12 @@ from evaluate import evaluate_model
 DATASET_PATH = "data/addition_dataset_big_scored_max_len"
 
 
-def init_train_state(config: PretrainConfig, vocab_size, seq_len):
+def init_train_state(config: PretrainConfig, vocab_size):
     # Estimated total training steps
     total_steps = int(config.epochs / config.global_batch_size)
 
     # Model
-    model, optimizer, optimizer_lr = train_utils.create_model(config, vocab_size, seq_len)
+    model, optimizer, optimizer_lr = train_utils.create_model(config, vocab_size)
 
     return TrainState(
         step=0,
@@ -82,8 +82,8 @@ def launch(hydra_config: DictConfig):
 
     curr_difficulty = 1
     # Setup curriculum learning with difficulty sampler
-    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty)
-    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty)
+    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty, name="Train")
+    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty, name="Val")
 
     # Create DataLoaders with dynamic padding
     train_loader = DataLoader(
@@ -101,10 +101,9 @@ def launch(hydra_config: DictConfig):
     test_loader = DataLoader(test_ds, batch_size=config.batch_size, collate_fn=dynamic_padding_collate_fn)
 
     vocab_size = len(tokenizer)
-    seq_len = 200# 1000 felt like overkill for addition
 
     # Encapsulate model and iterative data in a single state dataclass
-    train_state = init_train_state(config, vocab_size=vocab_size, seq_len=seq_len) 
+    train_state = init_train_state(config, vocab_size=vocab_size)
 
     wandb.init(project=config.project_name, name=config.run_name, config=config.model_dump(), settings=wandb.Settings(_disable_stats=True))  # type: ignore
     wandb.log({"num_params": sum(x.numel() for x in train_state.model.parameters())}, step=0)
@@ -133,8 +132,6 @@ def launch(hydra_config: DictConfig):
             model_batch = {
                 "inputs": batch["input_ids"],
                 "labels": batch["labels"],
-                # make puzzle identifiers all zeros since we dont use them
-                "puzzle_identifiers": torch.zeros_like(batch["input_ids"], dtype=torch.long)
             }
 
             # for now, we re-initialize carry every batch
@@ -171,14 +168,12 @@ def launch(hydra_config: DictConfig):
 
             if train_state.step % config.eval_interval == 0 and train_state.step > 0: # type: ignore
                 print(f"Evaluating: Step {train_state.step} | Difficulty: {val_sampler.curr_difficulty}")
-                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=config.batch_size)
+                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=None) # [kmcgrath] TODO: Double check what num_batches does.
                 val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
                 wandb.log(val_metrics, step=train_state.step)
 
                 # Curriculum learning
-                # TODO: Model hasn't learned this far. Might break.
-                accuracy = epoch_metrics['accuracy'] / epoch_metrics['count']
-                if accuracy >= 0.9:
+                if total_metrics.get('accuracy_pct', 0.0) >= 0.9:
                     curr_difficulty += 1
                     train_sampler.update_difficulty(curr_difficulty)
                     val_sampler.update_difficulty(curr_difficulty)

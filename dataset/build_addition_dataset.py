@@ -10,7 +10,7 @@ SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
 class DifficultySampler(Sampler):
     """Samples examples based on difficulty threshold for curriculum learning."""
 
-    def __init__(self, torch_dataset, starting_difficulty):
+    def __init__(self, torch_dataset, starting_difficulty, name="Sampler"):
         """
 
         torch_dataset.dataset   -> underlying HF Dataset loaded as .arrow
@@ -19,9 +19,11 @@ class DifficultySampler(Sampler):
         Args:
             torch_dataset (_type_): _description_
             starting_difficulty (_type_): _description_
+            name (str): Name to identify this sampler in logs (e.g., "train", "val")
         """
+        self.name = name
         self.difficulties = self.load_difficulty_tensor(torch_dataset.dataset)
-    
+
         # Set starting difficulty & print this
         self.update_difficulty(starting_difficulty)
         self.filtered = None
@@ -46,8 +48,8 @@ class DifficultySampler(Sampler):
         self.idxs = self.mask.nonzero(as_tuple=True)[0]
 
         self.length = int((self.difficulties <= self.curr_difficulty).sum().item())
-        
-        print(f"Sampler: Running at difficulty {new_difficulty} with {count} examples")
+
+        print(f"{self.name} Sampler: Running at difficulty {new_difficulty} with {count} examples")
 
 
     def __iter__(self):
@@ -118,7 +120,7 @@ class ArithmeticTorchDataset(Dataset):
 
         result = {
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
-            "labels": torch.tensor(labels, dtype=torch.long),
+            "labels": labels,  # Already a tensor, no need to convert again
             "operand_len_a": torch.tensor(item["operand_len_a"]),
             "operand_len_b": torch.tensor(item["operand_len_b"]),
             "difficulty": torch.tensor(item['difficulty'])
@@ -139,10 +141,9 @@ def dynamic_padding_collate_fn(batch):
     difficulty = torch.stack([b["difficulty"] for b in batch])
 
     # Compute max lengths in this batch
-    # max_input_len = max(x.size(0) for x in input_ids)
-    # max_label_len = max(x.size(0) for x in labels)
+    max_input_len = max(x.size(0) for x in input_ids)
+    max_label_len = max(x.size(0) for x in labels)
     # pad everything to 1000 since we set seq_len=1000 in launch fn
-    max_seq_len = 200
 
     def pad_sequence(seq_list, max_len):
         padded = []
@@ -151,8 +152,8 @@ def dynamic_padding_collate_fn(batch):
             padded.append(torch.cat([seq, pad_token_id.repeat(pad_len)]))
         return torch.stack(padded)
 
-    padded_inputs = pad_sequence(input_ids, max_seq_len)
-    padded_labels = pad_sequence(labels, max_seq_len)
+    padded_inputs = pad_sequence(input_ids, max_input_len)
+    padded_labels = pad_sequence(labels, max_label_len)
 
     # Set labels to -100 for cross entropy loss
     padded_labels[padded_labels == pad_token_id] = -100

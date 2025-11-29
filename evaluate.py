@@ -27,7 +27,6 @@ def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
     batch = {
         "inputs": current_tensor,
         "labels": current_tensor,  # Dummy labels for generation
-        "puzzle_identifiers": torch.zeros_like(current_tensor, dtype=torch.long)
     }
     with torch.device(device):
         carry = model.initial_carry(batch)
@@ -93,26 +92,25 @@ def evaluate_model(model, val_loader, device, num_batches=None):
         for batch_idx, batch in enumerate(val_loader):
             if num_batches is not None and batch_idx >= num_batches:
                 break
-            
-            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v 
+
+            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v
                      for k, v in batch.items()}
-            
+
             model_batch = {
                 "inputs": batch["input_ids"],
                 "labels": batch["labels"],
-                "puzzle_identifiers": torch.zeros_like(batch["input_ids"], dtype=torch.long)
             }
-            
+
             with torch.device(device):
                 carry = model.initial_carry(model_batch)
-            
+
             # Forward pass
             new_carry, loss, metrics, outputs, all_halted = model(
                 return_keys=["logits", "preds"],
                 carry=carry,
                 batch=model_batch,
             )
-            
+
             # Accumulate metrics
             total_metrics["loss"] += loss.item()
             for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "steps", "count"]:
@@ -120,10 +118,13 @@ def evaluate_model(model, val_loader, device, num_batches=None):
                     total_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
 
             batch_count += 1
-    
-    # Average metrics
-    for k in total_metrics:
-        total_metrics[k] /= batch_count
+
+    # Average metrics (avoid division by zero)
+    if batch_count > 0:
+        for k in total_metrics:
+            total_metrics[k] /= batch_count
+    else:
+        print("Warning: No validation batches processed!")
     
     # Compute accuracy percentages
     if total_metrics["count"] > 0:
