@@ -13,12 +13,14 @@ project_name: arithmetic
 # Hyperparams - Training
 batch_size: 128 # Works on most machines
 
+curriculum_threshold: 0.80
+
 epochs: 100000 # Arbitrarily large to not stop early
 eval_interval: 100 # How often to run validation
 save_interval: 1000 # How often to save the model
 checkpoint_every_eval: True
 
-lr: 1e-4
+lr: 5e-4
 lr_min_ratio: 1.0
 lr_warmup_steps: 2000
 

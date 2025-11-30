@@ -105,12 +105,18 @@ def evaluate_model(model, val_loader, device, num_batches=None):
             with torch.device(device):
                 carry = model.initial_carry(model_batch)
 
-            # Forward pass
-            new_carry, loss, metrics, outputs, all_halted = model(
-                return_keys=["logits", "preds"],
-                carry=carry,
-                batch=model_batch,
-            )
+            # Forward pass - loop until all sequences have halted
+            inference_steps = 0
+            while True:
+                carry, loss, metrics, outputs, all_halted = model(
+                    return_keys=["logits", "preds"],
+                    carry=carry,
+                    batch=model_batch,
+                )
+                inference_steps += 1
+
+                if all_halted:
+                    break
 
             # Accumulate metrics
             total_metrics["loss"] += loss.item()

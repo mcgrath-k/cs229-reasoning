@@ -31,6 +31,8 @@ class PretrainConfig(pydantic.BaseModel):
     batch_size: int
     epochs: int
 
+    curriculum_threshold: float
+
     lr: float
     lr_min_ratio: float
     lr_warmup_steps: int

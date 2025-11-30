@@ -168,22 +168,28 @@ def launch(hydra_config: DictConfig):
             # Run validation
             if train_state.step % config.eval_interval == 0 and train_state.step > 0: # type: ignore
                 print(f"Evaluating: Step {train_state.step} | Difficulty: {val_sampler.curr_difficulty}")
-                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=None) # [kmcgrath] TODO: Double check what num_batches does.
+                total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=10)
                 val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
                 val_metrics['examples_seen'] = examples_seen
                 wandb.log(val_metrics, step=train_state.step)
 
                 # Curriculum learning
-                if total_metrics.get('accuracy_pct', 0.0) >= 0.9:
+                if total_metrics['exact_accuracy_pct'] >= config.curriculum_threshold:
                     curr_difficulty += 1
                     train_sampler.update_difficulty(curr_difficulty)
                     val_sampler.update_difficulty(curr_difficulty)
 
+            # Compute percentage metrics
             train_metrics = {f"train/{k}": v for k, v in metrics.items()}
+            # Add percentage metrics if count > 0
+            if metrics.get("count", 0) > 0:
+                train_metrics["train/accuracy_pct"] = metrics["accuracy"] / metrics["count"]
+                train_metrics["train/exact_accuracy_pct"] = metrics["exact_accuracy"] / metrics["count"]
             # Use examples seen as X-axis in WandB to make runs comparable.
             train_metrics['examples_seen'] = examples_seen
             wandb.log(train_metrics, step=train_state.step)
             train_state.step += 1
+            wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
     
         train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
         # Final epoch metrics

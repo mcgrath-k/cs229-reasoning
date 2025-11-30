@@ -96,8 +96,8 @@ class AdditionDataset():
 
 def build_train_val_test_dataset(train_range =(1,20), 
                                  val_range=(1,20), 
-                                 test_range=(21,200), 
-                                 total_train_samples=20_000_000, 
+                                 test_range=(1,200), 
+                                 total_train_samples=5_000_000, 
                                  test_samples_per_pair=10,
                                  thinking_tokens=0):
     assert train_range == val_range, "Split not supported"
