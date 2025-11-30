@@ -22,10 +22,7 @@ class TinyRecursiveReasoningModel_ACTV1InnerCarry:
 @dataclass
 class TinyRecursiveReasoningModel_ACTV1Carry:
     inner_carry: TinyRecursiveReasoningModel_ACTV1InnerCarry
-    
-    steps: torch.Tensor
-    halted: torch.Tensor
-    
+    steps: torch.Tensor    
     current_data: Dict[str, torch.Tensor]
 
 
@@ -51,14 +48,11 @@ class TinyRecursiveReasoningModel_ACTV1Config(BaseModel):
     rms_norm_eps: float = 1e-5
     rope_theta: float = 10000.0
     
-    # Halting Q-learning config
-    halt_max_steps: int
-    halt_exploration_prob: float
+    # Fixed reasoning steps
+    # TODO: might need to think about what values to set here
+    max_reasoning_steps: int = 1 
 
     forward_dtype: str = "bfloat16"
-
-    # Alexia: added
-    no_ACT_continue: bool =  True # No continue ACT loss, only use the sigmoid of the halt which makes much more sense
 
 class TinyRecursiveReasoningModel_ACTV1Block(nn.Module):
     def __init__(self, config: TinyRecursiveReasoningModel_ACTV1Config) -> None:
@@ -114,7 +108,6 @@ class TinyRecursiveReasoningModel_ACTV1_Inner(nn.Module):
 
         self.embed_tokens = CastedEmbedding(self.config.vocab_size, self.config.hidden_size, init_std=embed_init_std, cast_to=self.forward_dtype)
         self.lm_head      = CastedLinear(self.config.hidden_size, self.config.vocab_size, bias=False)
-        self.q_head       = CastedLinear(self.config.hidden_size, 2, bias=True)
 
         # LM Blocks
         if self.config.pos_encodings == "rope":
@@ -131,12 +124,6 @@ class TinyRecursiveReasoningModel_ACTV1_Inner(nn.Module):
         self.H_init = nn.Buffer(trunc_normal_init_(torch.empty(self.config.hidden_size, dtype=self.forward_dtype), std=1), persistent=True)
         self.L_init = nn.Buffer(trunc_normal_init_(torch.empty(self.config.hidden_size, dtype=self.forward_dtype), std=1), persistent=True)
 
-        # Q head special init
-        # Init Q to (almost) zero for faster learning during bootstrapping
-        with torch.no_grad():
-            self.q_head.weight.zero_()
-            self.q_head.bias.fill_(-5)  # type: ignore
-
     def _input_embeddings(self, input: torch.Tensor):
         # Token embedding
         embedding = self.embed_tokens(input.to(torch.int32))
@@ -148,10 +135,11 @@ class TinyRecursiveReasoningModel_ACTV1_Inner(nn.Module):
             z_L=torch.empty(batch_size, seq_len, self.config.hidden_size, dtype=self.forward_dtype),
         )
         
-    def reset_carry(self, reset_flag: torch.Tensor, carry: TinyRecursiveReasoningModel_ACTV1InnerCarry):
+    def reset_carry(self, carry: TinyRecursiveReasoningModel_ACTV1InnerCarry):
+        batch_size, seq_len = carry.z_H.shape[:2]
         return TinyRecursiveReasoningModel_ACTV1InnerCarry(
-            z_H=torch.where(reset_flag.view(-1, 1, 1), self.H_init, carry.z_H),
-            z_L=torch.where(reset_flag.view(-1, 1, 1), self.L_init, carry.z_L),
+            z_H=self.H_init.expand(batch_size, seq_len, -1).clone(),
+            z_L=self.L_init.expand(batch_size, seq_len, -1).clone(),
         )
 
     def forward(self, carry: TinyRecursiveReasoningModel_ACTV1InnerCarry, batch: Dict[str, torch.Tensor]) -> Tuple[TinyRecursiveReasoningModel_ACTV1InnerCarry, torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
@@ -163,7 +151,6 @@ class TinyRecursiveReasoningModel_ACTV1_Inner(nn.Module):
         input_embeddings = self._input_embeddings(batch["inputs"])
 
         # Forward iterations
-        it = 0
         z_H, z_L = carry.z_H, carry.z_L
         # H_cycles-1 without grad
         with torch.no_grad():
@@ -179,8 +166,7 @@ class TinyRecursiveReasoningModel_ACTV1_Inner(nn.Module):
         # LM Outputs
         new_carry = TinyRecursiveReasoningModel_ACTV1InnerCarry(z_H=z_H.detach(), z_L=z_L.detach())  # New carry no grad
         output = self.lm_head(z_H)  # (B, L, vocab_size)
-        q_logits = self.q_head(z_H[:, 0]).to(torch.float32) # Q-head; uses the first puzzle_emb position
-        return new_carry, output, (q_logits[..., 0], q_logits[..., 1])
+        return new_carry, output
 
 
 class TinyRecursiveReasoningModel_ACTV1(nn.Module):
@@ -195,65 +181,28 @@ class TinyRecursiveReasoningModel_ACTV1(nn.Module):
     def initial_carry(self, batch: Dict[str, torch.Tensor]):
         batch_size, seq_len = batch["inputs"].shape
 
+        # initialise and resest since no more halting
+        # TODO: think, do i need to reset or just do empty
+        inner_carry = self.inner.empty_carry(batch_size, seq_len)
+        inner_carry = self.inner.reset_carry(inner_carry)
+
         return TinyRecursiveReasoningModel_ACTV1Carry(
-            inner_carry=self.inner.empty_carry(batch_size, seq_len),  # Empty is expected, it will be reseted in first pass as all sequences are halted.
-            
-            steps=torch.zeros((batch_size, ), dtype=torch.int32),
-            halted=torch.ones((batch_size, ), dtype=torch.bool),  # Default to halted
-            
+            inner_carry=inner_carry,
+            steps=torch.zeros((batch_size, ), dtype=torch.int32),            
             current_data={k: torch.empty_like(v) for k, v in batch.items()}
         )
         
     def forward(self, carry: TinyRecursiveReasoningModel_ACTV1Carry, batch: Dict[str, torch.Tensor]) -> Tuple[TinyRecursiveReasoningModel_ACTV1Carry, Dict[str, torch.Tensor]]:
 
-        # Update data, carry (removing halted sequences)
-        # Reset inner carry for sequences that were halted before this call
-        new_inner_carry = self.inner.reset_carry(carry.halted, carry.inner_carry)
-
-        # Reset steps for those same sequences
-        new_steps = torch.where(carry.halted, 0, carry.steps)
-
         # Update current_data in carry
-        new_current_data = {k: torch.where(carry.halted.view((-1, ) + (1, ) * (batch[k].ndim - 1)), batch[k], v) for k, v in carry.current_data.items()}
+        new_current_data = {k: v.clone() for k, v in batch.items()}
+        new_steps = carry.steps + 1  # Increment steps
 
         # Forward inner model
-        new_inner_carry, logits, (q_halt_logits, q_continue_logits) = self.inner(new_inner_carry, new_current_data)
-
+        new_inner_carry, logits = self.inner(carry.inner_carry, new_current_data)
 
         outputs = {
             "logits": logits,
-            "q_halt_logits": q_halt_logits,
-            "q_continue_logits": q_continue_logits
         }
 
-        with torch.no_grad():
-            # Compute halting flags for next call
-            new_steps = new_steps + 1
-            is_last_step = new_steps >= self.config.halt_max_steps
-            
-            halted = is_last_step
-
-            # if training, and ACT is enabled
-            if self.training and (self.config.halt_max_steps > 1):
-
-                # Halt signal
-                # NOTE: During evaluation, always use max steps, this is to guarantee the same halting steps inside a batch for batching purposes
-                
-                if self.config.no_ACT_continue:
-                    halted = halted | (q_halt_logits > 0)
-                else:
-                    halted = halted | (q_halt_logits > q_continue_logits)
-
-                # Exploration
-                min_halt_steps = (torch.rand_like(q_halt_logits) < self.config.halt_exploration_prob) * torch.randint_like(new_steps, low=2, high=self.config.halt_max_steps + 1)
-                halted = halted & (new_steps >= min_halt_steps)
-
-                if not self.config.no_ACT_continue:
-                    # Compute target Q
-                    # NOTE: No replay buffer and target networks for computing target Q-value.
-                    # As batch_size is large, there're many parallel envs.
-                    # Similar concept as PQN https://arxiv.org/abs/2407.04811
-                    _, _, (next_q_halt_logits, next_q_continue_logits), _, _ = self.inner(new_inner_carry, new_current_data)
-                    outputs["target_q_continue"] = torch.sigmoid(torch.where(is_last_step, next_q_halt_logits, torch.maximum(next_q_halt_logits, next_q_continue_logits)))
-
-        return TinyRecursiveReasoningModel_ACTV1Carry(new_inner_carry, new_steps, halted, new_current_data), outputs
+        return TinyRecursiveReasoningModel_ACTV1Carry(new_inner_carry, new_steps, new_current_data), outputs
