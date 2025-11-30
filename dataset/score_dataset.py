@@ -102,7 +102,7 @@ def save_dataset_to_disk(dataset_dict, save_dir):
 
 ######### SET THESE VARIABLES !!!!!!!!!!!!!! ###############
 DATASET_PATH = 'data/addition_dataset_big'
-METRIC = min_len
+METRIC = max_len
 
 if __name__== '__main__':
     ### Set path and metric above before running
