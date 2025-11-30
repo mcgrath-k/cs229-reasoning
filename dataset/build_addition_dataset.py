@@ -2,7 +2,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Sampler
 from datasets import load_from_disk
 
-DATASET_PATH = "data/addition_dataset"
 VOCAB_CHARS = list("0123456789+=")
 SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
 
@@ -23,6 +22,10 @@ class DifficultySampler(Sampler):
         """
         self.name = name
         self.difficulties = self.load_difficulty_tensor(torch_dataset.dataset)
+        self.max_difficulty = int(self.difficulties.max().item())
+        self.is_capped = False
+
+        print(f"{self.name} Sampler: Maximum difficulty in dataset = {self.max_difficulty}")
 
         # Set starting difficulty & print this
         self.update_difficulty(starting_difficulty)
@@ -167,6 +170,9 @@ def dynamic_padding_collate_fn(batch):
     }
 
 def main():
+    # This path is local to __name__ == '__main__', hence defined down here.
+    DATASET_PATH = "data/addition_dataset"
+
     dataset_dict = load_from_disk(DATASET_PATH)
     tokenizer = ArithmeticTokenizer()
 
