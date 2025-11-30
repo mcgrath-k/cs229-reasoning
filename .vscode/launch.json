@@ -29,7 +29,7 @@
       // removed omp num threads, not sure the use yet.
       "args": [
         "epochs=20000",
-        "batch_size=64",
+        "batch_size=128",
         "lr=5e-4",
         "weight_decay=1.0",
       ],
