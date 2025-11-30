@@ -7,21 +7,15 @@ defaults:
 hydra:
   output_subdir: null
 
-# Data path
-data_paths: ['data/arc-aug-1000']
-data_paths_test: []
-
-evaluators:
-  - name: arc@ARC
 
 project_name: arithmetic
 
 # Hyperparams - Training
-batch_size: 768
+batch_size: 128 # Works on most machines
 
-
-epochs: 100000
-eval_interval: 100
+epochs: 100000 # Arbitrarily large to not stop early
+eval_interval: 100 # How often to run validation
+save_interval: 1000 # How often to save the model
 checkpoint_every_eval: True
 
 lr: 1e-4
@@ -32,10 +26,6 @@ lr_warmup_steps: 2000
 beta1: 0.9
 beta2: 0.95
 weight_decay: 0.1
-puzzle_emb_weight_decay: 0.1
-
-# Hyperparams - Puzzle embeddings training
-puzzle_emb_lr: 1e-2
 
 seed: 0
 min_eval_interval: 0 # when to start the eval

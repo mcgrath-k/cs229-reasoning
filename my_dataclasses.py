@@ -26,11 +26,6 @@ class EvaluatorConfig(pydantic.BaseModel):
 class PretrainConfig(pydantic.BaseModel):
     # Config
     arch: ArchConfig
-    # Data
-    data_paths: List[str]
-    data_paths_test: List[str] = []
-    # Evaluators
-    evaluators: List[EvaluatorConfig] = []
 
     # Hyperparams
     batch_size: int
@@ -51,12 +46,13 @@ class PretrainConfig(pydantic.BaseModel):
     checkpoint_path: Optional[str] = None
 
     # Extras
-    seed: int = 0
     checkpoint_every_eval: bool = False
     eval_interval: Optional[int] = None
     min_eval_interval: Optional[int] = 0 # when to start eval
     eval_save_outputs: List[str] = []
-    save_interval: int = 500 # Save every n steps.
+
+    seed: int = 0
+    save_interval: int # Save every n steps.
 
     ema: bool = False # use Exponential-Moving-Average
     ema_rate: float = 0.999 # EMA-rate
