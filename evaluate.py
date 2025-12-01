@@ -10,13 +10,13 @@ from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTok
 DATASET_PATH = "data/addition_dataset_big_scored_max_len"
 CHECKPOINT_PATH = 'checkpoints/arithmetic/TinyRecursiveReasoningModel_ACTV1_sage-wolf/step_7000.pt'
 
-def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
+def generate(model, tokenizer, prompt_text, max_length=100, device='cuda', max_reasoning_steps=10):
     model.eval()
     
     current_ids = tokenizer.encode(prompt_text)
     current_tensor = torch.tensor([current_ids], dtype=torch.long, device=device)
     
-    seq_len = 200  # Should match config
+    seq_len = 200  # TODO: Should match config
     if current_tensor.shape[1] < seq_len:
         pad_len = seq_len - current_tensor.shape[1]
         current_tensor = torch.cat([
@@ -41,16 +41,20 @@ def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
     
     with torch.no_grad():
         for _ in range(max_length):
-            carry, loss, metrics, outputs, all_halted = model(
-                return_keys=["logits", "preds"],
-                carry=carry,
-                batch=batch
-            )
-            
-            # Get prediction for the last non-padding position
-            last_pos = generated_length - 1
-            next_token_logits = outputs["logits"][0, last_pos, :]
-            next_token = torch.argmax(next_token_logits).item()
+            for step in range(max_reasoning_steps):
+                final = (step == max_reasoning_steps - 1)
+                
+                carry, loss, metrics, outputs, halted = model(
+                    return_keys=["logits", "preds"],
+                    carry=carry,
+                    batch=batch,
+                )
+                
+                if final:            
+                    # Get prediction for the last non-padding position
+                    last_pos = generated_length - 1
+                    next_token_logits = outputs["logits"][0, last_pos, :]
+                    next_token = torch.argmax(next_token_logits).item()
             
             if eos_token is not None and next_token == eos_token:
                 break
@@ -75,13 +79,13 @@ def generate(model, tokenizer, prompt_text, max_length=100, device='cuda'):
     return generated_text
 
 
-def evaluate_model(model, val_loader, device, num_batches=None):
+def evaluate_model(model, val_loader, device, num_batches=None, max_reasoning_steps=10):
+    # TODO: do we want to set a max number of reasoning steps here too?
+   
     model.eval()
     
     total_metrics = {
-        "loss": 0.0,
         "lm_loss": 0.0,
-        "q_halt_loss": 0.0,
         "accuracy": 0.0,
         "exact_accuracy": 0.0,
         "steps": 0.0,
@@ -105,24 +109,22 @@ def evaluate_model(model, val_loader, device, num_batches=None):
             with torch.device(device):
                 carry = model.initial_carry(model_batch)
 
-            # Forward pass - loop until all sequences have halted
-            inference_steps = 0
-            while True:
-                carry, loss, metrics, outputs, all_halted = model(
-                    return_keys=["logits", "preds"],
+            # Run fixed number of reasoning steps
+            for step_idx in range(max_reasoning_steps):
+                is_final_step = (step_idx == max_reasoning_steps - 1)
+                
+                # Forward pass
+                carry, loss, metrics, output = model(
                     carry=carry,
                     batch=model_batch,
+                    return_keys=["logits", "preds"]
                 )
-                inference_steps += 1
-
-                if all_halted:
-                    break
-
-            # Accumulate metrics
-            total_metrics["loss"] += loss.item()
-            for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "steps", "count"]:
-                if k in metrics:
-                    total_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
+                
+                # Only collect metrics on final step
+                if is_final_step:
+                    for k in ["lm_loss", "accuracy", "exact_accuracy", "steps", "count"]:
+                        if k in metrics:
+                            total_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
 
             batch_count += 1
 
