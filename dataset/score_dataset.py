@@ -7,7 +7,6 @@ from datasets import Dataset, DatasetDict, load_from_disk
 
 
 def max_len(example):
-
     '''
     example: row from dataset
     Ex: {'prompt': '1022086+9=', 'operand_len_a': 7, 'operand_len_b': 1, 'answer': '1022095'}
@@ -20,6 +19,16 @@ def max_len(example):
     #   difficulty = max([len(operand) for operand in operands_list])
     difficulty = max([example['operand_len_a'], example['operand_len_b']])
     return difficulty
+
+
+def min_len(example):
+    '''
+    example: row from dataset
+    Ex: {'prompt': '1022086+9=', 'operand_len_a': 7, 'operand_len_b': 1, 'answer': '1022095'}
+    return: difficulty = length of shortest operand
+    '''
+    difficulty = min([example['operand_len_a'], example['operand_len_b']])
+    return difficulty 
     
 def add_carries(example):
     operands_list = example['prompt'].replace("=", "").split('+')
