@@ -22,7 +22,6 @@ from my_dataclasses import PretrainConfig, TrainState
 from evaluate import evaluate_model
 
 
-DATASET_PATH = "data/addition_dataset_big_scored_max_len"
 
 
 def init_train_state(config: PretrainConfig, vocab_size, total_steps: int):
@@ -58,7 +57,7 @@ def launch(hydra_config: DictConfig):
     ### Will move this out of pretrain to keep it generic
 
     # 1. Load dataset
-    dataset_dict = load_from_disk(DATASET_PATH)
+    dataset_dict = load_from_disk(config.dataset_path)
     tokenizer = ArithmeticTokenizer()
 
     # Wrap splits as PyTorch Datasets
@@ -181,9 +180,18 @@ def launch(hydra_config: DictConfig):
 
                 # Curriculum learning
                 if total_metrics['exact_accuracy_pct'] >= config.curriculum_threshold:
-                    curr_difficulty += 1
-                    train_sampler.update_difficulty(curr_difficulty)
-                    val_sampler.update_difficulty(curr_difficulty)
+                    if not train_sampler.is_capped:
+                        curr_difficulty += 1
+                        train_sampler.update_difficulty(curr_difficulty)
+                        val_sampler.update_difficulty(curr_difficulty)
+
+                        # Check if we've now reached the maximum difficulty
+                        if curr_difficulty >= train_sampler.max_difficulty:
+                            train_sampler.is_capped = True
+                            print(f"{'='*50}")
+                            print(f"Training Sampler DIFFICULTY CAPPED at {train_sampler.max_difficulty}")
+                            print(f"{'='*50}")
+                    
 
             # Compute percentage metrics
             train_metrics = {f"train/{k}": v for k, v in metrics.items()}

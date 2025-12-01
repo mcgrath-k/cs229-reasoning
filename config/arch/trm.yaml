@@ -9,7 +9,7 @@ loss:
 max_reasoning_steps: 10 
 
 H_cycles: 3
-L_cycles: 6
+L_cycles: 4
 
 H_layers: 0
 L_layers: 2

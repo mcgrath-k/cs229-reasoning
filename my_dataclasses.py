@@ -27,6 +27,9 @@ class PretrainConfig(pydantic.BaseModel):
     # Config
     arch: ArchConfig
 
+    # Dataset
+    dataset_path: str
+
     # Hyperparams
     batch_size: int
     epochs: int

@@ -10,14 +10,16 @@ hydra:
 
 project_name: arithmetic
 
+dataset_path: data/addition_dataset_big_scored_max_len
+
 # Hyperparams - Training
-batch_size: 128 # Works on most machines
+batch_size: 512 # Works on most machines
 
 curriculum_threshold: 0.80
 
 epochs: 100000 # Arbitrarily large to not stop early
 eval_interval: 100 # How often to run validation
-save_interval: 1000 # How often to save the model
+save_interval: 2000 # How often to save the model
 checkpoint_every_eval: True
 
 lr: 5e-4
