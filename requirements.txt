@@ -6,6 +6,7 @@ pydantic
 argdantic
 wandb
 omegaconf
+matplotlib
 hydra-core
 huggingface_hub
 packaging 

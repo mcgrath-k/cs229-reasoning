@@ -16,6 +16,7 @@ dataset_path: data/addition_dataset_big_scored_max_len
 batch_size: 512 # Works on most machines
 
 curriculum_threshold: 0.80
+mix_curriculum_data: False
 
 epochs: 100000 # Arbitrarily large to not stop early
 eval_interval: 100 # How often to run validation

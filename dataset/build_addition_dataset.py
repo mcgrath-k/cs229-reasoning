@@ -9,7 +9,7 @@ SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
 class DifficultySampler(Sampler):
     """Samples examples based on difficulty threshold for curriculum learning."""
 
-    def __init__(self, torch_dataset, starting_difficulty, name="Sampler"):
+    def __init__(self, torch_dataset, starting_difficulty, name="Sampler", mixed=False):
         """
 
         torch_dataset.dataset   -> underlying HF Dataset loaded as .arrow
@@ -23,6 +23,9 @@ class DifficultySampler(Sampler):
         self.name = name
         self.difficulties = self.load_difficulty_tensor(torch_dataset.dataset)
         self.max_difficulty = int(self.difficulties.max().item())
+
+        # Mix 1/5 regular data + 4/5 curriculum data.
+        self.mixed = mixed
         self.is_capped = False
 
         print(f"{self.name} Sampler: Maximum difficulty in dataset = {self.max_difficulty}")
@@ -50,6 +53,9 @@ class DifficultySampler(Sampler):
         # return indices where mask == True
         self.idxs = self.mask.nonzero(as_tuple=True)[0]
 
+        # Store all indices for mixed sampling
+        self.all_idxs = torch.arange(len(self.difficulties))
+
         self.length = int((self.difficulties <= self.curr_difficulty).sum().item())
 
         print(f"{self.name} Sampler: Running at difficulty {new_difficulty} with {count} examples")
@@ -60,11 +66,31 @@ class DifficultySampler(Sampler):
         # If threshold is too low, return an empty iterator.
         if len(self.idxs) == 0:
             return iter(())
-        
-        # Generate a random permutation of the integers
-        perm = torch.randperm(len(self.idxs))
-        for i in perm:
-            yield self.idxs[i].item()
+
+        if self.mixed:
+            # Mix 4/5 curriculum data + 1/5 regular data
+            num_curriculum = int(0.8 * self.length)  # 4/5
+            num_regular = self.length - num_curriculum  # 1/5
+
+            # Sample curriculum indices (with difficulty threshold)
+            curriculum_perm = torch.randperm(len(self.idxs))[:num_curriculum]
+            curriculum_samples = self.idxs[curriculum_perm]
+
+            # Sample regular indices (from entire dataset)
+            regular_perm = torch.randperm(len(self.all_idxs))[:num_regular]
+            regular_samples = self.all_idxs[regular_perm]
+
+            # Concatenate and shuffle
+            mixed_idxs = torch.cat([curriculum_samples, regular_samples])
+            final_perm = torch.randperm(len(mixed_idxs))
+
+            for i in final_perm:
+                yield mixed_idxs[i].item()
+        else:
+            # Pure curriculum learning (original behavior)
+            perm = torch.randperm(len(self.idxs))
+            for i in perm:
+                yield self.idxs[i].item()
 
     def __len__(self):
         return self.length
