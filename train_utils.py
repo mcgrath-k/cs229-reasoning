@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 
 from my_dataclasses import TrainState, PretrainConfig
 
-from models.losses import ACTLossHead
+from models.losses import LossHead
 from models.recursive_reasoning.trm import TinyRecursiveReasoningModel_ACTV1
 from dataset.build_addition_dataset import ArithmeticTokenizer
 
@@ -35,7 +35,7 @@ def create_model(config: PretrainConfig, vocab_size):
     )
 
     model = TinyRecursiveReasoningModel_ACTV1(model_cfg)
-    model = ACTLossHead(model, loss_type='stablemax_cross_entropy') #type: ignore
+    model = LossHead(model, loss_type='stablemax_cross_entropy') #type: ignore
 
     # Optimizers and lr
     optimizer = AdamATan2(

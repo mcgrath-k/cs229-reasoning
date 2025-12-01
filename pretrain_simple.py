@@ -102,7 +102,7 @@ def launch(hydra_config: DictConfig):
     train_state.model.to(device)
 
     examples_seen = 0
-    max_reasoning_steps = config.max_reasoning_steps # hmm, will this be in config this way?
+    max_reasoning_steps = config.max_reasoning_steps # hmm, will this be in config this way? -- no it isnt lol
 
     # Train
     print(f"Starting training with {len(train_ds)} training samples.")
@@ -142,7 +142,7 @@ def launch(hydra_config: DictConfig):
                 final = (step == max_reasoning_steps - 1)
 
                 # forward
-                train_state.carry, loss, metrics, output, halted = train_state.model(carry=train_state.carry, batch=model_batch, return_keys=["logits", "preds"])
+                train_state.carry, loss, metrics, output = train_state.model(carry=train_state.carry, batch=model_batch, return_keys=["logits", "preds"])
 
                 # if on final reasoning step, compute grads / metrics
                 if final:
@@ -176,7 +176,7 @@ def launch(hydra_config: DictConfig):
                 total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=10)
                 val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
                 val_metrics['examples_seen'] = examples_seen
-                wandb.log(val_metrics, step=train_state.step)
+                # wandb.log(val_metrics, step=train_state.step)
 
                 # Curriculum learning
                 if total_metrics['exact_accuracy_pct'] >= config.curriculum_threshold:
@@ -201,9 +201,9 @@ def launch(hydra_config: DictConfig):
                 train_metrics["train/exact_accuracy_pct"] = metrics["exact_accuracy"] / metrics["count"]
             # Use examples seen as X-axis in WandB to make runs comparable.
             train_metrics['examples_seen'] = examples_seen
-            wandb.log(train_metrics, step=train_state.step)
+            # wandb.log(train_metrics, step=train_state.step)
             train_state.step += 1
-            wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
+            # wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
     
         train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
         # Final epoch metrics
