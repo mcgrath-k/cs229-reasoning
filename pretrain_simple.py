@@ -23,7 +23,6 @@ from evaluate import evaluate_model
 
 
 
-
 def init_train_state(config: PretrainConfig, vocab_size, total_steps: int):
     # Model
     model, optimizer, optimizer_lr = train_utils.create_model(config, vocab_size)
@@ -63,13 +62,14 @@ def launch(hydra_config: DictConfig):
     # Wrap splits as PyTorch Datasets
     train_ds = ArithmeticTorchDataset(dataset_dict["train"], tokenizer)
     val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer)
+    val_ood_ds = ArithmeticTorchDataset(dataset_dict["val_extrapolate"], tokenizer)
     test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
 
 
-    curr_difficulty = 1
     # Setup curriculum learning with difficulty sampler
-    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty, name="Train")
-    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty, name="Val")
+    curr_difficulty = 1
+    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty, mixed=config.mix_curriculum_data, name="Train")
+    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty, mixed=config.mix_curriculum_data, name="Val")
 
     # Create DataLoaders with dynamic padding
     train_loader = DataLoader(
@@ -84,6 +84,7 @@ def launch(hydra_config: DictConfig):
                             sampler=val_sampler,
                             collate_fn=dynamic_padding_collate_fn)
     
+    val_ood_loader = DataLoader(val_ood_ds, batch_size=config.batch_size, collate_fn=dynamic_padding_collate_fn)
     test_loader = DataLoader(test_ds, batch_size=config.batch_size, collate_fn=dynamic_padding_collate_fn)
 
     vocab_size = len(tokenizer)
@@ -185,7 +186,6 @@ def launch(hydra_config: DictConfig):
                             print(f"{'='*50}")
                             print(f"Training Sampler DIFFICULTY CAPPED at {train_sampler.max_difficulty}")
                             print(f"{'='*50}")
-                    
 
             # Compute percentage metrics
             train_metrics = {f"train/{k}": v for k, v in metrics.items()}

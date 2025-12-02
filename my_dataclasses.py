@@ -35,6 +35,9 @@ class PretrainConfig(pydantic.BaseModel):
     epochs: int
 
     curriculum_threshold: float
+    # Mix 1/5 regular data + 4/5 curriculum data
+    mix_curriculum_data: bool
+
 
     lr: float
     lr_min_ratio: float

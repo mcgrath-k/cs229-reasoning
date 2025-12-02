@@ -96,9 +96,10 @@ class AdditionDataset():
 
 def build_train_val_test_dataset(train_range =(1,20), 
                                  val_range=(1,20), 
-                                 test_range=(1,200), 
+                                 test_range=(1,100), 
                                  total_train_samples=5_000_000, 
                                  test_samples_per_pair=10,
+                                 gen_extrapolation_dataset=True, # Mirror test set length
                                  thinking_tokens=0):
     assert train_range == val_range, "Split not supported"
 
@@ -114,11 +115,23 @@ def build_train_val_test_dataset(train_range =(1,20),
     train_val_ds = train_val_ds.shuffle(seed=SEED)
     split = train_val_ds.train_test_split(test_size=0.10, seed=SEED)
 
-    return DatasetDict({
-        "train": split["train"],
-        "val": split["test"],
-        "test": test_ds
-    })
+    if gen_extrapolation_dataset:
+        print("Generating validation extrapolation examples")
+        val_extrapolate_gen = AdditionDataset(test_range[0], test_range[1], samples_per_pair=test_samples_per_pair)
+        val_extrapolate_ds = val_extrapolate_gen.generate_examples()
+
+        return DatasetDict({
+            "train": split["train"],
+            "val": split["test"],
+            "val_extrapolate": val_extrapolate_ds,
+            "test": test_ds
+        })
+    else:
+        return DatasetDict({
+            "train": split["train"],
+            "val": split["test"],
+            "test": test_ds
+        })
 
 def save_dataset_to_disk(dataset_dict, save_dir='data/addition_dataset_big'):
     os.makedirs(save_dir, exist_ok=True)

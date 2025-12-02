@@ -127,7 +127,7 @@ def load_checkpoint(path, tokenizer, optimizer=None, device="cuda"):
 
     config = load_config(checkpoint['config'])
 
-    model, _, _= create_model(config, seq_len=200, vocab_size=len(tokenizer))
+    model, _, _= create_model(config, vocab_size=len(tokenizer))
     
     model.load_state_dict(checkpoint["model_state_dict"])
     
