@@ -9,7 +9,7 @@ SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
 class DifficultySampler(Sampler):
     """Samples examples based on difficulty threshold for curriculum learning."""
 
-    def __init__(self, torch_dataset, starting_difficulty, name="Sampler", mixed=False, mix_ratio=1.0):
+    def __init__(self, torch_dataset, starting_difficulty, name="Sampler", mix_ratio=None):
         """
 
         torch_dataset.dataset   -> underlying HF Dataset loaded as .arrow
@@ -24,7 +24,7 @@ class DifficultySampler(Sampler):
         self.difficulties = self.load_difficulty_tensor(torch_dataset.dataset)
         self.max_difficulty = int(self.difficulties.max().item())
 
-        self.mix_ratio = mix_ratio # Reduce from 1 to incorporate mixing.
+        self.mix_ratio = mix_ratio # 1: Full curriculum, 0: Full distribution, .8: .8 curr + .2 full
         
         self.is_capped = False
 
@@ -67,7 +67,7 @@ class DifficultySampler(Sampler):
         if len(self.idxs) == 0:
             return iter(())
 
-        if self.mix_ratio:
+        if self.mix_ratio is not None:
             # Mix 4/5 curriculum data + 1/5 regular data
             num_curriculum = int(self.mix_ratio * self.length)  # 4/5
             num_regular = self.length - num_curriculum  # 1/5

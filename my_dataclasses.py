@@ -37,7 +37,6 @@ class PretrainConfig(pydantic.BaseModel):
     epochs: int
 
     curriculum_threshold: float
-    mix_curriculum_data: bool # Enable 
     mix_curriculum_ratio: float # Mix (1 - mix_curriculum_ratio) * regular data + (mix_curriculum_ratio) curriculum data
 
 
