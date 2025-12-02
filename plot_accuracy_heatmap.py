@@ -54,20 +54,20 @@ def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None):
             preds = outputs["preds"]
             labels = batch["labels"]
 
-            # VECTORIZED: Move all metadata to CPU in one bulk transfer (much faster!)
+            # Move all metadata to CPU in one bulk transfer
             operand_len_a_cpu = batch["operand_len_a"].tolist()
             operand_len_b_cpu = batch["operand_len_b"].tolist()
 
             if eq_token is not None:
-                # VECTORIZED: Find = positions for entire batch at once
+                # Find = positions for entire batch at once
                 eq_mask = (batch["input_ids"] == eq_token)  # [batch_size, seq_len]
                 has_eq = eq_mask.any(dim=1)  # [batch_size] - which examples have =
                 eq_positions = eq_mask.float().argmax(dim=1)  # [batch_size] - first = position
 
-                # FULLY VECTORIZED: Compute answer_start for entire batch
+                # Compute answer_start for entire batch
                 answer_start_positions = eq_positions + 1  # [batch_size]
 
-                # FULLY VECTORIZED: Find answer_end for entire batch
+                # Find answer_end for entire batch
                 batch_size, seq_len = labels.shape
 
                 # Create a range tensor for sequence positions
@@ -89,7 +89,7 @@ def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None):
                     torch.full((batch_size, seq_len), seq_len, device=labels.device)
                 ).min(dim=1).values  # [batch_size]
 
-                # FULLY VECTORIZED: Check correctness for entire batch at once
+                # Check correctness for entire batch at once
                 # Create masks for valid answer regions
                 answer_lengths = end_positions - answer_start_positions  # [batch_size]
                 has_answer = (has_eq) & (answer_lengths > 0)  # [batch_size]
@@ -125,7 +125,7 @@ def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None):
                     # Single GPU-to-CPU transfer for correctness results
                     is_correct_cpu = is_correct_batch.cpu().tolist()
 
-                    # Store results using CPU data only (no GPU-to-CPU sync in this loop!)
+                    # Store results using CPU data only
                     for i in range(batch_size):
                         if has_answer_cpu[i]:
                             len1 = operand_len_a_cpu[i]

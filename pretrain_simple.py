@@ -20,8 +20,6 @@ from dataset.build_addition_dataset import (
 from my_dataclasses import PretrainConfig, TrainState
 
 from evaluate import evaluate_model
-from plot_accuracy_heatmap import evaluate_by_length, create_heatmap
-
 
 
 
@@ -68,8 +66,8 @@ def launch(hydra_config: DictConfig):
     test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
 
 
-    curr_difficulty = 1
     # Setup curriculum learning with difficulty sampler
+    curr_difficulty = 1
     train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty, mixed=config.mix_curriculum_data, name="Train")
     val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty, mixed=config.mix_curriculum_data, name="Val")
 
@@ -175,20 +173,7 @@ def launch(hydra_config: DictConfig):
                 val_metrics['examples_seen'] = examples_seen
                 wandb.log(val_metrics, step=train_state.step)
 
-                # OOD extrapolation validation
-                # This takes... forever. 
-                # length_accuracies = evaluate_by_length(train_state.model, val_ood_loader, tokenizer, device)
-                # fig, accuracy_matrix, count_matrix = create_heatmap(length_accuracies)
-
-                # import matplotlib.pyplot as plt
-                # import numpy as np
-                # np.save("accuracy_matrix.npy", accuracy_matrix)
-                # np.save("count_matrix.npy", count_matrix)
-
-                # output_path = "length_accuracy_heatmap.png"
-                # plt.savefig(output_path, dpi=300, bbox_inches='tight')
-
-                # Curriculum learn                
+                # Curriculum learning
                 if total_metrics['exact_accuracy_pct'] >= config.curriculum_threshold:
                     if not train_sampler.is_capped:
                         curr_difficulty += 1
@@ -201,8 +186,6 @@ def launch(hydra_config: DictConfig):
                             print(f"{'='*50}")
                             print(f"Training Sampler DIFFICULTY CAPPED at {train_sampler.max_difficulty}")
                             print(f"{'='*50}")
-
-
 
             # Compute percentage metrics
             train_metrics = {f"train/{k}": v for k, v in metrics.items()}
