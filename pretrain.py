@@ -74,7 +74,7 @@ class PretrainConfig(pydantic.BaseModel):
 
     # Extras
     seed: int = 0
-    checkpoint_every_eval: bool = False
+    checkpoint_every_epoch: bool = False
     eval_interval: Optional[int] = None
     min_eval_interval: Optional[int] = 0 # when to start eval
     eval_save_outputs: List[str] = []

@@ -138,9 +138,25 @@ def save_dataset_to_disk(dataset_dict, save_dir='data/addition_dataset_big'):
     dataset_dict.save_to_disk(save_dir)
     print("Saved Huggingface Dataset to disk")
 
+def push_dataset_to_hub(dataset_dict: DatasetDict, repo_id: str):
+    """Push dataset to Huggingface
+
+    REQUIRES LOGIN prior to running this script:
+    `hf auth login`
+    
+    Args:
+        dataset_dict (DatasetDict): Huggingface Dataset
+        repo_id (str): The name of pre-existing repo or new repo you want to create.
+    """
+
+    dataset_dict.push_to_hub(repo_id)
+
 if __name__ == '__main__':
     random.seed(SEED)
 
     dataset_dict = build_train_val_test_dataset()
 
     save_dataset_to_disk(dataset_dict)
+
+    
+    # push_dataset_to_hub(dataset_dict, 'mkyle/addition_dataset_5_million')

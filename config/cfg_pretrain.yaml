@@ -10,20 +10,26 @@ hydra:
 
 project_name: arithmetic
 
-dataset_path: data/addition_dataset_big_scored_max_len
+dataset_is_remote: True
+dataset_path: mkyle/addition_dataset_5_million
+
+scoring_func: max_len
+
+# Use if local
+# dataset_path: data/addition_dataset_big_scored_max_len
 
 # Hyperparams - Training
-batch_size: 512 # Works on most machines
+batch_size: 512 # Reduce for smaller machines
 
 curriculum_threshold: 0.80
-mix_curriculum_data: False
+mix_curriculum_ratio: 1
 
 max_reasoning_steps: 10  # Fixed number of reasoning steps 
 
 epochs: 100000 # Arbitrarily large to not stop early
 eval_interval: 100 # How often to run validation
 save_interval: 2000 # How often to save the model
-checkpoint_every_eval: True
+checkpoint_every_epoch: False
 
 lr: 5e-4
 lr_min_ratio: 1.0

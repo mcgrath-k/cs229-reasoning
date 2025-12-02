@@ -10,7 +10,7 @@ from omegaconf import DictConfig
 
 ## Dataset imports
 from torch.utils.data import DataLoader
-from datasets import load_from_disk
+from datasets import load_from_disk, load_dataset
 
 ## Project imports
 import train_utils
@@ -20,6 +20,8 @@ from dataset.build_addition_dataset import (
 from my_dataclasses import PretrainConfig, TrainState
 
 from evaluate import evaluate_model
+
+from dataset.score_dataset import score_dataset
 
 
 
@@ -53,23 +55,36 @@ def launch(hydra_config: DictConfig):
 
     torch.random.manual_seed(config.seed)
 
-    ### Will move this out of pretrain to keep it generic
-
     # 1. Load dataset
-    dataset_dict = load_from_disk(config.dataset_path)
+    if config.dataset_is_remote:
+        # Dataset path points to a huggingface repo
+        dataset_dict = load_dataset(config.dataset_path)
+    else:
+        # Dataset path points to a local folder
+        dataset_dict = load_from_disk(config.dataset_path)
+
+    scored_dataset_dict = score_dataset(dataset_dict, config.scoring_func)
+    
+
     tokenizer = ArithmeticTokenizer()
 
     # Wrap splits as PyTorch Datasets
-    train_ds = ArithmeticTorchDataset(dataset_dict["train"], tokenizer)
-    val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer)
-    val_ood_ds = ArithmeticTorchDataset(dataset_dict["val_extrapolate"], tokenizer)
-    test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
+    train_ds = ArithmeticTorchDataset(scored_dataset_dict["train"], tokenizer)
+    val_ds = ArithmeticTorchDataset(scored_dataset_dict["val"], tokenizer)
+    val_ood_ds = ArithmeticTorchDataset(scored_dataset_dict["val_extrapolate"], tokenizer)
+    test_ds = ArithmeticTorchDataset(scored_dataset_dict["test"], tokenizer)
 
 
     # Setup curriculum learning with difficulty sampler
     curr_difficulty = 1
-    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty, mixed=config.mix_curriculum_data, name="Train")
-    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty, mixed=config.mix_curriculum_data, name="Val")
+    train_sampler = DifficultySampler(train_ds,
+                                        starting_difficulty=curr_difficulty,
+                                        mix_ratio=config.mix_curriculum_ratio,
+                                        name="Train")
+    val_sampler = DifficultySampler(val_ds,
+                                    starting_difficulty=curr_difficulty, 
+                                    mix_ratio=config.mix_curriculum_ratio,
+                                    name="Val")
 
     # Create DataLoaders with dynamic padding
     train_loader = DataLoader(
@@ -229,7 +244,8 @@ def launch(hydra_config: DictConfig):
             train_state.step += 1
             wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
     
-        # train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
+        if config.checkpoint_every_epoch:
+            train_utils.save_checkpoint(train_state, config, filename=f"epoch_step_{train_state.step}.pt")
         # Final epoch metrics
         num_batches = len(train_loader)
         print(f"\n=== Epoch {epoch} Summary ===")

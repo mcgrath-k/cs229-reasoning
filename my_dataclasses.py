@@ -28,15 +28,17 @@ class PretrainConfig(pydantic.BaseModel):
     arch: ArchConfig
 
     # Dataset
-    dataset_path: str
+    dataset_path: str # Can be huggingface repo_id or local folder
+    dataset_is_remote: bool # Is the dataset hosted on huggingface?
+    scoring_func: str # String that denotes which dataset scoring func to run.
 
     # Hyperparams
     batch_size: int
     epochs: int
 
     curriculum_threshold: float
-    # Mix 1/5 regular data + 4/5 curriculum data
-    mix_curriculum_data: bool
+    mix_curriculum_data: bool # Enable 
+    mix_curriculum_ratio: float # Mix (1 - mix_curriculum_ratio) * regular data + (mix_curriculum_ratio) curriculum data
 
 
     lr: float
@@ -54,7 +56,7 @@ class PretrainConfig(pydantic.BaseModel):
     checkpoint_path: Optional[str] = None
 
     # Extras
-    checkpoint_every_eval: bool = False
+    checkpoint_every_epoch: bool = False
     eval_interval: Optional[int] = None
     min_eval_interval: Optional[int] = 0 # when to start eval
     eval_save_outputs: List[str] = []

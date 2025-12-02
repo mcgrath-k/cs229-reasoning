@@ -116,6 +116,9 @@ def load_config(hydra_config: DictConfig) -> PretrainConfig:
     if config.checkpoint_path is None:
         config.checkpoint_path = os.path.join("checkpoints", config.project_name, config.run_name)
 
+    if config.checkpoint_every_epoch:
+        print("!!! Saving a checkpoint every Epoch - Ensure sufficient space is available !!!")
+
     return config
 
 def load_checkpoint(path, tokenizer, optimizer=None, device="cuda"):
