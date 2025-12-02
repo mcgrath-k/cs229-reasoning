@@ -102,10 +102,15 @@ def launch(hydra_config: DictConfig):
     train_state.model.to(device)
 
     examples_seen = 0
-    max_reasoning_steps = config.max_reasoning_steps # hmm, will this be in config this way? -- no it isnt lol
+    max_reasoning_steps = config.arch.__pydantic_extra__.get('max_reasoning_steps', 10)
+
+    # step-wise tracking (to see if 10 steps is enough / too much)
+    step_wise_tracker = {i: [] for i in range(max_reasoning_steps)}
+    LOG_STEPWISE_EVERY = 10
 
     # Train
     print(f"Starting training with {len(train_ds)} training samples.")
+    print("Reasoning steps per sample:", max_reasoning_steps)
 
     for epoch in range(config.epochs):
         train_state.model.train()
@@ -144,6 +149,11 @@ def launch(hydra_config: DictConfig):
                 # forward
                 train_state.carry, loss, metrics, output = train_state.model(carry=train_state.carry, batch=model_batch, return_keys=["logits", "preds"])
 
+                # Track step-wise metrics
+                if metrics.get("count", 0) > 0:
+                    step_acc = (metrics["exact_accuracy"] / metrics["count"]).item()
+                    step_wise_tracker[step].append(step_acc)
+
                 # if on final reasoning step, compute grads / metrics
                 if final:
                     # backward
@@ -166,6 +176,20 @@ def launch(hydra_config: DictConfig):
             if batch_idx % 10 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f} | Difficulty: {train_sampler.curr_difficulty}")
 
+            # Log step-wise metrics to WandB
+            if batch_idx % LOG_STEPWISE_EVERY == 0 and batch_idx > 0:
+                stepwise_metrics = {}
+                for s_idx in range(max_reasoning_steps):
+                    if step_wise_tracker[s_idx]:
+                        avg_acc = sum(step_wise_tracker[s_idx]) / len(step_wise_tracker[s_idx])
+                        stepwise_metrics[f"stepwise/exact_acc_step_{s_idx+1}"] = avg_acc
+                
+                if stepwise_metrics:
+                    wandb.log(stepwise_metrics, step=train_state.step)
+                
+                # Reset tracker
+                step_wise_tracker = {i: [] for i in range(max_reasoning_steps)}
+
             # Save checkpoint
             if train_state.step % config.save_interval == 0 and train_state.step > 0:
                 train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
@@ -176,7 +200,7 @@ def launch(hydra_config: DictConfig):
                 total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=10)
                 val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
                 val_metrics['examples_seen'] = examples_seen
-                # wandb.log(val_metrics, step=train_state.step)
+                wandb.log(val_metrics, step=train_state.step)
 
                 # Curriculum learning
                 if total_metrics['exact_accuracy_pct'] >= config.curriculum_threshold:
@@ -201,11 +225,11 @@ def launch(hydra_config: DictConfig):
                 train_metrics["train/exact_accuracy_pct"] = metrics["exact_accuracy"] / metrics["count"]
             # Use examples seen as X-axis in WandB to make runs comparable.
             train_metrics['examples_seen'] = examples_seen
-            # wandb.log(train_metrics, step=train_state.step)
+            wandb.log(train_metrics, step=train_state.step)
             train_state.step += 1
-            # wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
+            wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
     
-        train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
+        # train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
         # Final epoch metrics
         num_batches = len(train_loader)
         print(f"\n=== Epoch {epoch} Summary ===")
