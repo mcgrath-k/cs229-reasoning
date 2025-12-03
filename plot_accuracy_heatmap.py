@@ -12,7 +12,7 @@ from tqdm import tqdm
 import pickle
 
 
-def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None):
+def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None, max_reasoning_steps=10):
     model.eval()
 
     length_accuracies = defaultdict(list)
@@ -41,14 +41,14 @@ def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None):
             with torch.device(device):
                 carry = model.initial_carry(model_batch)
 
-            while True:
-                carry, loss, metrics, outputs, all_halted = model(
+            for step_idx in range(max_reasoning_steps):
+                # Forward pass
+                carry, loss, metrics, outputs = model(
                     return_keys=["logits", "preds"],
                     carry=carry,
                     batch=model_batch,
                 )
-                if all_halted:
-                    break
+
             # TODO [kmcgrath]: Consolidate duplicated logic on above lines.
 
             preds = outputs["preds"]
@@ -195,7 +195,8 @@ def create_heatmap(length_accuracies, title="Positional Embedding Accuracy"):
 
 if __name__ == "__main__":
     DATASET_PATH = "data/addition_dataset_big_scored_max_len"
-    CHECKPOINT_PATH = 'checkpoints/arithmetic/TinyRecursiveReasoningModel_ACTV1_ancient-moth/step_176.pt'
+    CHECKPOINT_PATH = 'reas_8_step_22000.pt'
+    MAX_REASONING_STEPS = 10
     
     tokenizer = ArithmeticTokenizer()
     model = load_checkpoint(CHECKPOINT_PATH, tokenizer, optimizer=None)
@@ -211,7 +212,13 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
 
     
-    length_accuracies = evaluate_by_length(model, test_loader, tokenizer, device, max_batches=None)
+    length_accuracies = evaluate_by_length(model, 
+                                           test_loader, 
+                                           tokenizer, 
+                                           device, 
+                                           max_batches=None, 
+                                           max_reasoning_steps=MAX_REASONING_STEPS)
+    
     # save output length_accuracies for debugging
     with open("length_accuracies.pkl", "wb") as f:
         pickle.dump(length_accuracies, f)
