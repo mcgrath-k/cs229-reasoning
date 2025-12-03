@@ -103,16 +103,21 @@ def launch(hydra_config: DictConfig):
     train_state.model.to(device)
 
     examples_seen = 0
+    max_reasoning_steps = config.arch.__pydantic_extra__.get('max_reasoning_steps', 10)
+
+    # step-wise tracking (to see if 10 steps is enough / too much)
+    step_wise_tracker = {i: [] for i in range(max_reasoning_steps)}
+    LOG_STEPWISE_EVERY = 10
 
     # Train
     print(f"Starting training with {len(train_ds)} training samples.")
+    print("Reasoning steps per sample:", max_reasoning_steps)
 
     for epoch in range(config.epochs):
         train_state.model.train()
         epoch_metrics = {
             "loss": 0.0,
             "lm_loss": 0.0,
-            "q_halt_loss": 0.0,
             "accuracy": 0.0,
             "exact_accuracy": 0.0,
             "steps": 0.0,
@@ -138,28 +143,53 @@ def launch(hydra_config: DictConfig):
             with torch.device(device):
                 train_state.carry = train_state.model.initial_carry(model_batch)
 
-            # forward
-            new_carry, loss, metrics, output, halted = train_state.model(carry=train_state.carry, batch=model_batch, return_keys=["logits", "preds"])
+            # for fixed number of reasoning steps
+            for step in range(max_reasoning_steps):
+                final = (step == max_reasoning_steps - 1)
 
-            # backward
-            train_state.optimizer.zero_grad()
-            loss.backward()
+                # forward
+                train_state.carry, loss, metrics, output = train_state.model(carry=train_state.carry, batch=model_batch, return_keys=["logits", "preds"])
 
-            # step optimizer lr
-            lr_this_step = compute_lr(train_state.optimizer_lr, config, train_state)
-            for param_group in train_state.optimizer.param_groups:
-                param_group["lr"] = lr_this_step
-            train_state.optimizer.step()
+                # Track step-wise metrics
+                if metrics.get("count", 0) > 0:
+                    step_acc = (metrics["exact_accuracy"] / metrics["count"]).item()
+                    step_wise_tracker[step].append(step_acc)
 
-            # training metrics
-            epoch_metrics["loss"] += loss.item()
-            for k in ["lm_loss", "q_halt_loss", "accuracy", "exact_accuracy", "steps", "count"]:
-                if k in metrics:
-                    epoch_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
+                # if on final reasoning step, compute grads / metrics
+                if final:
+                    # backward
+                    train_state.optimizer.zero_grad()
+                    loss.backward()
+
+                    # step optimizer lr
+                    lr_this_step = compute_lr(train_state.optimizer_lr, config, train_state)
+                    for param_group in train_state.optimizer.param_groups:
+                        param_group["lr"] = lr_this_step
+                    train_state.optimizer.step()
+
+                    # training metrics
+                    epoch_metrics["loss"] += loss.item()
+                    for k in ["lm_loss", "accuracy", "exact_accuracy", "steps", "count"]:
+                        if k in metrics:
+                            epoch_metrics[k] += metrics[k].item() if isinstance(metrics[k], torch.Tensor) else metrics[k]
 
             # Report to terminal
             if batch_idx % 10 == 0:
                 print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f} | Difficulty: {train_sampler.curr_difficulty}")
+
+            # Log step-wise metrics to WandB
+            if batch_idx % LOG_STEPWISE_EVERY == 0 and batch_idx > 0:
+                stepwise_metrics = {}
+                for s_idx in range(max_reasoning_steps):
+                    if step_wise_tracker[s_idx]:
+                        avg_acc = sum(step_wise_tracker[s_idx]) / len(step_wise_tracker[s_idx])
+                        stepwise_metrics[f"stepwise/exact_acc_step_{s_idx+1}"] = avg_acc
+                
+                if stepwise_metrics:
+                    wandb.log(stepwise_metrics, step=train_state.step)
+                
+                # Reset tracker
+                step_wise_tracker = {i: [] for i in range(max_reasoning_steps)}
 
             # Save checkpoint
             if train_state.step % config.save_interval == 0 and train_state.step > 0:
@@ -199,13 +229,12 @@ def launch(hydra_config: DictConfig):
             train_state.step += 1
             wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
     
-        train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
+        # train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
         # Final epoch metrics
         num_batches = len(train_loader)
         print(f"\n=== Epoch {epoch} Summary ===")
         print(f"Avg Loss: {epoch_metrics['loss'] / num_batches:.4f}")
         print(f"Avg LM Loss: {epoch_metrics['lm_loss'] / num_batches:.4f}")
-        print(f"Avg Q Halt Loss: {epoch_metrics['q_halt_loss'] / num_batches:.4f}")
         if epoch_metrics['count'] > 0:
             print(f"Accuracy: {epoch_metrics['accuracy'] / epoch_metrics['count']:.4f}")
             print(f"Exact Accuracy: {epoch_metrics['exact_accuracy'] / epoch_metrics['count']:.4f}")

@@ -1,10 +1,12 @@
 name: recursive_reasoning.trm@TinyRecursiveReasoningModel_ACTV1
 loss:
-  name: losses@ACTLossHead
+  name: losses@LossHead
   loss_type: stablemax_cross_entropy
 
-halt_exploration_prob: 0.1
-halt_max_steps: 16
+# New parameter to set fixed number of reasoning steps
+# replaces ACT
+# TODO: what is a good default value here?
+max_reasoning_steps: 10 
 
 H_cycles: 3
 L_cycles: 4
@@ -23,4 +25,3 @@ pos_encodings: rope
 forward_dtype: bfloat16
 
 mlp_t: False # use mlp on L instead of transformer
-no_ACT_continue: True # No continue ACT loss, only use the sigmoid of the halt which makes much more sense

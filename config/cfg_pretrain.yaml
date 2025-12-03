@@ -18,6 +18,8 @@ batch_size: 512 # Works on most machines
 curriculum_threshold: 0.80
 mix_curriculum_data: False
 
+max_reasoning_steps: 10  # Fixed number of reasoning steps 
+
 epochs: 100000 # Arbitrarily large to not stop early
 eval_interval: 100 # How often to run validation
 save_interval: 2000 # How often to save the model

@@ -120,3 +120,67 @@ class ACTLossHead(nn.Module):
 
         return new_carry, total_loss, metrics, detached_outputs, new_carry.halted.all()
 
+class LossHead(nn.Module):
+    """Simplified loss head without ACT or Q-learning"""
+
+    def __init__(self, model: nn.Module, loss_type: str):
+        super().__init__()
+        self.model = model
+        self.loss_fn = globals()[loss_type]
+        
+    def initial_carry(self, *args, **kwargs):
+        return self.model.initial_carry(*args, **kwargs)  # type: ignore
+
+    def forward(
+        self,
+        return_keys: Sequence[str],
+        # Model args
+        **model_kwargs,
+    ) -> Tuple[Any, torch.Tensor, Dict[str, torch.Tensor], Optional[Dict[str, torch.Tensor]]]:
+        
+        # Model logits
+        # B x SeqLen x D
+        new_carry, outputs = self.model(**model_kwargs)
+        labels = new_carry.current_data["labels"]
+
+        with torch.no_grad():
+            # Preds
+            outputs["preds"] = torch.argmax(outputs["logits"], dim=-1)
+
+            # Correctness
+            mask = (labels != IGNORE_LABEL_ID)
+            loss_counts = mask.sum(-1)
+            loss_divisor = loss_counts.clamp_min(1).unsqueeze(-1)  # Avoid NaNs in division
+
+            output = torch.argmax(outputs["logits"], dim=-1)
+            is_correct = mask & (output == labels)
+            seq_is_correct = is_correct.sum(-1) == loss_counts
+            
+            # Metrics - for all sequences in batch
+            valid_metrics = (loss_counts > 0)
+            metrics = {
+                "count": valid_metrics.sum(),
+                
+                "accuracy":       torch.where(valid_metrics, (is_correct.to(torch.float32) / loss_divisor).sum(-1), 0).sum(),
+                "exact_accuracy": (valid_metrics & seq_is_correct).sum(),
+
+                "steps":          torch.where(valid_metrics, new_carry.steps, 0).sum(),
+            }
+
+        # Losses
+
+        per_token_losses = self.loss_fn(outputs["logits"],
+                                        labels,
+                                        ignore_index=IGNORE_LABEL_ID,
+                                        valid_mask=mask)
+        per_seq_loss = (per_token_losses / loss_divisor).sum(-1)
+        lm_loss = per_seq_loss.mean()
+
+        metrics.update({
+            "lm_loss": lm_loss.detach(),
+        })
+
+        # Filter outputs for return
+        detached_outputs = {k: outputs[k].detach() for k in return_keys if k in outputs}
+
+        return new_carry, lm_loss, metrics, detached_outputs
