@@ -5,7 +5,6 @@ loss:
 
 # New parameter to set fixed number of reasoning steps
 # replaces ACT
-# TODO: what is a good default value here?
 max_reasoning_steps: 10 
 
 H_cycles: 3

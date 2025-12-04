@@ -3,7 +3,7 @@ import pydantic
 import torch
 from torch import nn
 
-from typing import Optional, Any, Sequence, List
+from typing import Optional, Any, List, Literal
 
 from dataclasses import dataclass
 
@@ -16,6 +16,8 @@ class ArchConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra='allow')
     name: str
     loss: LossConfig
+
+    max_reasoning_steps: int
 
 
 class EvaluatorConfig(pydantic.BaseModel):
@@ -36,10 +38,10 @@ class PretrainConfig(pydantic.BaseModel):
     batch_size: int
     epochs: int
 
-    curriculum_threshold: float
+    # Curriculum learning
     mix_curriculum_ratio: float # float from 0->1. 1: Full curriculum, 0: Regular dataset
-    difficulty_type: str # 'diff_max_len', 'diff_carries', 'diff_min_len'
-
+    curriculum_threshold: float
+    curriculum_type: Optional[Literal["diff_max_len", "diff_carries", "diff_min_len"]] = None
 
     lr: float
     lr_min_ratio: float

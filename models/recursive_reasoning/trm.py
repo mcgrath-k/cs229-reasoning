@@ -49,8 +49,7 @@ class TinyRecursiveReasoningModel_ACTV1Config(BaseModel):
     rope_theta: float = 10000.0
     
     # Fixed reasoning steps
-    # TODO: might need to think about what values to set here
-    max_reasoning_steps: int = 1 
+    max_reasoning_steps: int
 
     forward_dtype: str = "bfloat16"
 

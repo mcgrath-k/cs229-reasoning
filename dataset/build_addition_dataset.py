@@ -10,7 +10,7 @@ SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
 class DifficultySampler(Sampler):
     """Samples examples based on difficulty threshold for curriculum learning."""
 
-    def __init__(self, torch_dataset, starting_difficulty, difficulty_type: str, name="Sampler", mix_ratio=None):
+    def __init__(self, torch_dataset, starting_difficulty, difficulty_type: str, mix_ratio: float = 1, name="Sampler"):
         """
 
         torch_dataset.dataset   -> underlying HF Dataset loaded as .arrow
@@ -28,8 +28,12 @@ class DifficultySampler(Sampler):
 
         self.mix_ratio = mix_ratio # 1: Full curriculum, 0: Full distribution, .8: .8 curr + .2 full
 
-        if self.mix_ratio:
-            print(f"{'='*3} Using curriculum scoring function: {difficulty_type} {'='*3}")
+
+        print(f"{'='*3} Using curriculum scoring function: {difficulty_type} {'='*3}")
+        if self.mix_ratio != 1:
+            curriculum_percentage = self.mix_ratio * 100
+            full_dist_percentage = (100 - curriculum_percentage)
+            print(f"MIXING ENABLED: {curriculum_percentage:.2f}% curriculum, {full_dist_percentage:.2f}% full distribution ")
         
         self.is_capped = False
 
@@ -67,6 +71,14 @@ class DifficultySampler(Sampler):
 
         self.length = int((self.difficulties <= self.curr_difficulty).sum().item())
 
+        if self.length == 0:
+            min_diff = int(self.difficulties.min().item())
+            max_diff = int(self.difficulties.max().item())
+            raise ValueError(
+                f"No samples with difficulty <= {new_difficulty}. "
+                f"Dataset difficulty range: [{min_diff}, {max_diff}]."
+            )
+
         print(f"{self.name} Sampler: Running at difficulty {new_difficulty} with {count} examples")
 
 
@@ -74,32 +86,27 @@ class DifficultySampler(Sampler):
 
         # If threshold is too low, return an empty iterator.
         if len(self.idxs) == 0:
-            return iter(())
+            return iter([])
 
-        if self.mix_ratio is not None:
-            # Mix 4/5 curriculum data + 1/5 regular data
-            num_curriculum = int(self.mix_ratio * self.length)  # 4/5
-            num_regular = self.length - num_curriculum  # 1/5
+        # I.E. if self.mix_ratio = 0.8: 4/5 curriculum data + 1/5 regular data.
+        num_curriculum = int(self.mix_ratio * self.length)  # 4/5
+        num_regular = self.length - num_curriculum  # 1/5
 
-            # Sample curriculum indices (with difficulty threshold)
-            curriculum_perm = torch.randperm(len(self.idxs))[:num_curriculum]
-            curriculum_samples = self.idxs[curriculum_perm]
+        # Sample curriculum indices (with difficulty threshold)
+        curriculum_perm = torch.randperm(len(self.idxs))[:num_curriculum]
+        curriculum_samples = self.idxs[curriculum_perm]
 
-            # Sample regular indices (from entire dataset)
-            regular_perm = torch.randperm(len(self.all_idxs))[:num_regular]
-            regular_samples = self.all_idxs[regular_perm]
+        # Sample regular indices (from entire dataset)
+        regular_perm = torch.randperm(len(self.all_idxs))[:num_regular]
+        regular_samples = self.all_idxs[regular_perm]
 
-            # Concatenate and shuffle
-            mixed_idxs = torch.cat([curriculum_samples, regular_samples])
-            final_perm = torch.randperm(len(mixed_idxs))
+        # Concatenate and shuffle
+        mixed_idxs = torch.cat([curriculum_samples, regular_samples])
+        final_perm = torch.randperm(len(mixed_idxs))
 
-            for i in final_perm:
-                yield mixed_idxs[i].item()
-        else:
-            # Pure curriculum learning (original behavior)
-            perm = torch.randperm(len(self.idxs))
-            for i in perm:
-                yield self.idxs[i].item()
+        for i in final_perm:
+            yield mixed_idxs[i].item()
+
 
     def __len__(self):
         return self.length
@@ -125,9 +132,10 @@ class ArithmeticTokenizer:
     
 
 class ArithmeticTorchDataset(Dataset):
-    def __init__(self, hf_dataset, tokenizer):
+    def __init__(self, hf_dataset, tokenizer, difficulty_type=None):
         self.dataset = hf_dataset
         self.tokenizer = tokenizer
+        self.difficulty_type = difficulty_type  # e.g., "diff_max_len" or None
 
     def __len__(self):
         return len(self.dataset)
@@ -161,8 +169,13 @@ class ArithmeticTorchDataset(Dataset):
             "labels": labels,  # Already a tensor, no need to convert again
             "operand_len_a": torch.tensor(item["operand_len_a"]),
             "operand_len_b": torch.tensor(item["operand_len_b"]),
-            "difficulty": torch.tensor(item['difficulty'])
         }
+
+        # Only include difficulty if curriculum learning is enabled
+        # We take the selected difficulty column, such as "diff_carries"
+        # And set this to the key "difficulty" in our batch.
+        if self.difficulty_type is not None:
+            result["difficulty"] = torch.tensor(item[self.difficulty_type])
 
         return result
 
@@ -170,13 +183,14 @@ def dynamic_padding_collate_fn(batch):
     """
     Pads all sequences in the batch dynamically to the max length in that batch.
     """
+
+    batch_keys = batch[0].keys()
     pad_token_id = torch.tensor([0], dtype=torch.long) # PAD: 0
 
     input_ids = [b["input_ids"] for b in batch]
     labels = [b["labels"] for b in batch]
     operand_len_a = torch.stack([b["operand_len_a"] for b in batch])
     operand_len_b = torch.stack([b["operand_len_b"] for b in batch])
-    difficulty = torch.stack([b["difficulty"] for b in batch])
 
     # Compute max lengths in this batch
     max_input_len = max(x.size(0) for x in input_ids)
@@ -196,13 +210,18 @@ def dynamic_padding_collate_fn(batch):
     # Set labels to -100 for cross entropy loss
     padded_labels[padded_labels == pad_token_id] = -100
 
-    return {
+    result = {
         "input_ids": padded_inputs,
         "labels": padded_labels,
         "operand_len_a": operand_len_a,
         "operand_len_b": operand_len_b,
-        "difficulty": difficulty
     }
+
+    # Only include difficulty if it exists in batch items
+    if "difficulty" in batch_keys:
+        result["difficulty"] = torch.stack([b["difficulty"] for b in batch])
+
+    return result
 
 def main():
     # This path is local to __name__ == '__main__', hence defined down here.

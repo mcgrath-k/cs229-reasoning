@@ -33,6 +33,7 @@ def create_model(config: PretrainConfig, vocab_size):
         **config.arch.__pydantic_extra__,  # type: ignore
         batch_size=config.batch_size,
         vocab_size=vocab_size,
+        max_reasoning_steps=config.arch.max_reasoning_steps,
         causal=True # Enable autoregressive modeling [working]
     )
 
@@ -117,6 +118,11 @@ def load_config(hydra_config: DictConfig) -> PretrainConfig:
         config.run_name = f"{config.arch.name.split('@')[-1]}_{coolname.generate_slug(2)}"
     if config.checkpoint_path is None:
         config.checkpoint_path = os.path.join("checkpoints", config.project_name, config.run_name)
+
+    if config.curriculum_type:
+        if not (0 < config.mix_curriculum_ratio <= 1):
+            raise ValueError(f"Mixing ratio: {config.mix_curriculum_ratio} not acceptable."
+                              "Choose from range (0,1].")
 
     if config.checkpoint_every_epoch:
         print("!!! Saving a checkpoint every Epoch - Ensure sufficient space is available !!!")
