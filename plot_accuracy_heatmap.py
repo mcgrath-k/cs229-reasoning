@@ -11,8 +11,7 @@ from collections import defaultdict
 from tqdm import tqdm
 import pickle
 
-from train_utils import HF_DATASET_REPO
-
+from constants import HF_DATASET_REPO
 
 def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None, max_reasoning_steps=10):
     model.eval()

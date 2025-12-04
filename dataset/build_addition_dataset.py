@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Sampler
 from datasets import load_dataset
 
+from constants import HF_DATASET_REPO
+
 
 VOCAB_CHARS = list("0123456789+=")
 SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
@@ -224,9 +226,6 @@ def dynamic_padding_collate_fn(batch):
     return result
 
 def main():
-    # This path is local to __name__ == '__main__', hence defined down here.
-    HF_DATASET_REPO = 'mkyle/addition_dataset_5_million_scored'
-
     dataset_dict = load_dataset(HF_DATASET_REPO)
     tokenizer = ArithmeticTokenizer()
 

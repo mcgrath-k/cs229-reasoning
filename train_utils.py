@@ -11,10 +11,7 @@ from my_dataclasses import TrainState, PretrainConfig
 from models.losses import LossHead
 from models.recursive_reasoning.trm import TinyRecursiveReasoningModel_ACTV1
 from dataset.build_addition_dataset import ArithmeticTokenizer
-
-IGNORE_LABEL_ID = -100
-
-HF_DATASET_REPO = 'mkyle/addition_dataset_5_million_scored'
+from constants import IGNORE_LABEL_ID
 
 
 def create_model(config: PretrainConfig, vocab_size):

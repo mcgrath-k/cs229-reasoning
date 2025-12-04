@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTokenizer, dynamic_padding_collate_fn
 
-from train_utils import HF_DATASET_REPO
+from constants import HF_DATASET_REPO
 
 def generate(model, tokenizer, prompt_text, max_length=100, device='cuda', max_reasoning_steps=10):
     model.eval()

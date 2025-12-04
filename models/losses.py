@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-IGNORE_LABEL_ID = -100
+from constants import IGNORE_LABEL_ID
 
 
 def s(x, epsilon=1e-30):
