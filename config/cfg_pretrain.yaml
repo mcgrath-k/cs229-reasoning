@@ -11,9 +11,9 @@ hydra:
 project_name: arithmetic
 
 dataset_is_remote: True
-dataset_path: mkyle/addition_dataset_5_million
+dataset_path: mkyle/addition_dataset_5_million_scored
 
-scoring_func: max_len
+difficulty_type: diff_max_len # 'diff_' + scoring_function naming scheme
 
 # Use if local
 # dataset_path: data/addition_dataset_big_scored_max_len

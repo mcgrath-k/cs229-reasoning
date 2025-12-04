@@ -14,6 +14,8 @@ from dataset.build_addition_dataset import ArithmeticTokenizer
 
 IGNORE_LABEL_ID = -100
 
+HF_DATASET_REPO = 'mkyle/addition_dataset_5_million_scored'
+
 
 def create_model(config: PretrainConfig, vocab_size):
     """Create Model

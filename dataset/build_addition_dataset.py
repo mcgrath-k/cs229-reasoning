@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset, DataLoader, Sampler
-from datasets import load_from_disk
+from datasets import load_dataset
+
 
 VOCAB_CHARS = list("0123456789+=")
 SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
@@ -9,7 +10,7 @@ SPECIAL_TOKENS = ["[PAD]", "[THINK]", "[EOS]"]
 class DifficultySampler(Sampler):
     """Samples examples based on difficulty threshold for curriculum learning."""
 
-    def __init__(self, torch_dataset, starting_difficulty, name="Sampler", mix_ratio=None):
+    def __init__(self, torch_dataset, starting_difficulty, difficulty_type: str, name="Sampler", mix_ratio=None):
         """
 
         torch_dataset.dataset   -> underlying HF Dataset loaded as .arrow
@@ -21,10 +22,14 @@ class DifficultySampler(Sampler):
             name (str): Name to identify this sampler in logs (e.g., "train", "val")
         """
         self.name = name
-        self.difficulties = self.load_difficulty_tensor(torch_dataset.dataset)
+        self.difficulties = self.load_difficulty_tensor(torch_dataset.dataset, difficulty_col_key=difficulty_type)
         self.max_difficulty = int(self.difficulties.max().item())
 
+
         self.mix_ratio = mix_ratio # 1: Full curriculum, 0: Full distribution, .8: .8 curr + .2 full
+
+        if self.mix_ratio:
+            print(f"{'='*3} Using curriculum scoring function: {difficulty_type} {'='*3}")
         
         self.is_capped = False
 
@@ -34,13 +39,17 @@ class DifficultySampler(Sampler):
         self.update_difficulty(starting_difficulty)
         self.filtered = None
 
-    def load_difficulty_tensor(self, ds, col="difficulty", dtype=torch.uint8):
+    def load_difficulty_tensor(self, ds, difficulty_col_key: str, dtype=torch.uint8):
+
+        if difficulty_col_key not in ds.column_names:
+            raise KeyError(f"Difficulty type {difficulty_col_key} not in dataset")
+        
         # Load column chunks one by one
         # Computing list(dataset['difficulty]) too expensive
         chunks = []
         # Arbitrary batch size, this is for efficiency / hence hardcoded
         for batch in ds.iter(batch_size=65536): 
-            chunks.append(torch.tensor(batch[col], dtype=dtype))
+            chunks.append(torch.tensor(batch[difficulty_col_key], dtype=dtype))
         return torch.cat(chunks)
     
 
@@ -197,9 +206,9 @@ def dynamic_padding_collate_fn(batch):
 
 def main():
     # This path is local to __name__ == '__main__', hence defined down here.
-    DATASET_PATH = "data/addition_dataset"
+    HF_DATASET_REPO = 'mkyle/addition_dataset_5_million_scored'
 
-    dataset_dict = load_from_disk(DATASET_PATH)
+    dataset_dict = load_dataset(HF_DATASET_REPO)
     tokenizer = ArithmeticTokenizer()
 
     # Wrap splits as PyTorch Datasets

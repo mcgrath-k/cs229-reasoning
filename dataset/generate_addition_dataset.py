@@ -96,6 +96,7 @@ class AdditionDataset():
 
 def build_train_val_test_dataset(train_range =(1,20), 
                                  val_range=(1,20), 
+                                 val_extrapolate_range=(1,30),
                                  test_range=(1,100), 
                                  total_train_samples=5_000_000, 
                                  test_samples_per_pair=10,
@@ -117,7 +118,7 @@ def build_train_val_test_dataset(train_range =(1,20),
 
     if gen_extrapolation_dataset:
         print("Generating validation extrapolation examples")
-        val_extrapolate_gen = AdditionDataset(test_range[0], test_range[1], samples_per_pair=test_samples_per_pair)
+        val_extrapolate_gen = AdditionDataset(val_extrapolate_range[0], val_extrapolate_range[1], samples_per_pair=test_samples_per_pair)
         val_extrapolate_ds = val_extrapolate_gen.generate_examples()
 
         return DatasetDict({

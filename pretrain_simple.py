@@ -21,8 +21,6 @@ from my_dataclasses import PretrainConfig, TrainState
 
 from evaluate import evaluate_model
 
-from dataset.score_dataset import score_dataset
-
 
 
 def init_train_state(config: PretrainConfig, vocab_size, total_steps: int):
@@ -63,26 +61,26 @@ def launch(hydra_config: DictConfig):
         # Dataset path points to a local folder
         dataset_dict = load_from_disk(config.dataset_path)
 
-    scored_dataset_dict = score_dataset(dataset_dict, config.scoring_func)
-    
 
     tokenizer = ArithmeticTokenizer()
 
     # Wrap splits as PyTorch Datasets
-    train_ds = ArithmeticTorchDataset(scored_dataset_dict["train"], tokenizer)
-    val_ds = ArithmeticTorchDataset(scored_dataset_dict["val"], tokenizer)
-    val_ood_ds = ArithmeticTorchDataset(scored_dataset_dict["val_extrapolate"], tokenizer)
-    test_ds = ArithmeticTorchDataset(scored_dataset_dict["test"], tokenizer)
+    train_ds = ArithmeticTorchDataset(dataset_dict["train"], tokenizer)
+    val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer)
+    val_ood_ds = ArithmeticTorchDataset(dataset_dict["val_extrapolate"], tokenizer)
+    test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
 
 
     # Setup curriculum learning with difficulty sampler
     curr_difficulty = 1
     train_sampler = DifficultySampler(train_ds,
                                         starting_difficulty=curr_difficulty,
+                                        difficulty_type=config.difficulty_type,
                                         mix_ratio=config.mix_curriculum_ratio,
                                         name="Train")
     val_sampler = DifficultySampler(val_ds,
                                     starting_difficulty=curr_difficulty, 
+                                    difficulty_type=config.difficulty_type,
                                     mix_ratio=config.mix_curriculum_ratio,
                                     name="Val")
 

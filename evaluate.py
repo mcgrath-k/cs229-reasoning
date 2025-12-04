@@ -1,14 +1,13 @@
 import os
 import torch
 from train_utils import load_checkpoint
-from datasets import load_from_disk
+from datasets import load_from_disk, load_dataset
 
 from torch.utils.data import DataLoader
 
 from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTokenizer, dynamic_padding_collate_fn
 
-DATASET_PATH = "data/addition_dataset_big_scored_max_len"
-CHECKPOINT_PATH = 'checkpoints/arithmetic/TinyRecursiveReasoningModel_ACTV1_sage-wolf/step_7000.pt'
+from train_utils import HF_DATASET_REPO
 
 def generate(model, tokenizer, prompt_text, max_length=100, device='cuda', max_reasoning_steps=10):
     model.eval()
@@ -147,9 +146,12 @@ def evaluate_model(model, val_loader, device, num_batches=None, max_reasoning_st
     return total_metrics
 
 
+
 if __name__ == "__main__":
-    if not os.path.exists(DATASET_PATH):
-        raise FileNotFoundError(f"Dataset: {DATASET_PATH} can not be found")
+
+    CHECKPOINT_PATH = 'checkpoints/arithmetic/TinyRecursiveReasoningModel_ACTV1_sage-wolf/step_7000.pt'
+
+    dataset_dict = load_dataset(HF_DATASET_REPO)
     
     if not os.path.exists(CHECKPOINT_PATH):
         raise FileNotFoundError(f"Saved model weights: {CHECKPOINT_PATH} can not be found")
@@ -169,7 +171,7 @@ if __name__ == "__main__":
 
 
     ## Test evaluate model
-    dataset_dict = load_from_disk(DATASET_PATH)
+    dataset_dict = load_dataset(HF_DATASET_REPO)
     tokenizer = ArithmeticTokenizer()
     val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer)
     val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=dynamic_padding_collate_fn)

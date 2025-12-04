@@ -30,14 +30,15 @@ class PretrainConfig(pydantic.BaseModel):
     # Dataset
     dataset_path: str # Can be huggingface repo_id or local folder
     dataset_is_remote: bool # Is the dataset hosted on huggingface?
-    scoring_func: str # String that denotes which dataset scoring func to run.
+    
 
     # Hyperparams
     batch_size: int
     epochs: int
 
     curriculum_threshold: float
-    mix_curriculum_ratio: float # Mix (1 - mix_curriculum_ratio) * regular data + (mix_curriculum_ratio) curriculum data
+    mix_curriculum_ratio: float # float from 0->1. 1: Full curriculum, 0: Regular dataset
+    difficulty_type: str # 'diff_max_len', 'diff_carries', 'diff_min_len'
 
 
     lr: float
