@@ -4,13 +4,14 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from train_utils import load_checkpoint
-from datasets import load_from_disk
+from datasets import load_dataset
 from torch.utils.data import DataLoader
 from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTokenizer, dynamic_padding_collate_fn
 from collections import defaultdict
 from tqdm import tqdm
 import pickle
 
+from constants import HF_DATASET_REPO
 
 def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None, max_reasoning_steps=10):
     model.eval()
@@ -194,7 +195,6 @@ def create_heatmap(length_accuracies, title="Positional Embedding Accuracy"):
     return fig, accuracy_matrix, count_matrix
 
 if __name__ == "__main__":
-    DATASET_PATH = "data/addition_dataset_big_scored_max_len"
     CHECKPOINT_PATH = 'reas_8_step_22000.pt'
     MAX_REASONING_STEPS = 10
     
@@ -205,7 +205,7 @@ if __name__ == "__main__":
     model.to(device)
     print(f"Using device: {device}")
     
-    dataset_dict = load_from_disk(DATASET_PATH)
+    dataset_dict = load_dataset(HF_DATASET_REPO)
     
     # using test set
     test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)

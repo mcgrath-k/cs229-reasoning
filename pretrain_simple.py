@@ -10,7 +10,7 @@ from omegaconf import DictConfig
 
 ## Dataset imports
 from torch.utils.data import DataLoader
-from datasets import load_from_disk
+from datasets import load_from_disk, load_dataset
 
 ## Project imports
 import train_utils
@@ -53,39 +53,53 @@ def launch(hydra_config: DictConfig):
 
     torch.random.manual_seed(config.seed)
 
-    ### Will move this out of pretrain to keep it generic
-
     # 1. Load dataset
-    dataset_dict = load_from_disk(config.dataset_path)
+    if config.dataset_is_remote:
+        # Dataset path points to a huggingface repo
+        dataset_dict = load_dataset(config.dataset_path)
+    else:
+        # Dataset path points to a local folder
+        dataset_dict = load_from_disk(config.dataset_path)
+
+
     tokenizer = ArithmeticTokenizer()
 
     # Wrap splits as PyTorch Datasets
-    train_ds = ArithmeticTorchDataset(dataset_dict["train"], tokenizer)
-    val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer)
-    val_ood_ds = ArithmeticTorchDataset(dataset_dict["val_extrapolate"], tokenizer)
-    test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
-
+    train_ds = ArithmeticTorchDataset(dataset_dict["train"], tokenizer, difficulty_type=config.curriculum_type)
+    val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer, difficulty_type=config.curriculum_type)
 
     # Setup curriculum learning with difficulty sampler
-    curr_difficulty = 1
-    train_sampler = DifficultySampler(train_ds, starting_difficulty=curr_difficulty, mixed=config.mix_curriculum_data, name="Train")
-    val_sampler = DifficultySampler(val_ds, starting_difficulty=curr_difficulty, mixed=config.mix_curriculum_data, name="Val")
-
+    if config.curriculum_type is not None:
+        print(f"CURRICULUM LEARNING ENABLED | Mixing ratio: {config.mix_curriculum_ratio}, scored on {config.curriculum_type}")
+        curr_difficulty = 1
+        train_sampler = DifficultySampler(train_ds,
+                                            starting_difficulty=curr_difficulty,
+                                            difficulty_type=config.curriculum_type,
+                                            mix_ratio=config.mix_curriculum_ratio,
+                                            name="Train")
+        val_sampler = DifficultySampler(val_ds,
+                                        starting_difficulty=curr_difficulty, 
+                                        difficulty_type=config.curriculum_type,
+                                        mix_ratio=config.mix_curriculum_ratio,
+                                        name="Val")
+        
+    else:
+        print("CURRICULUM LEARNING DISABLED")
+        train_sampler = None
+        val_sampler = None
+    
     # Create DataLoaders with dynamic padding
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
         sampler=train_sampler, # Curriculum sampler for training
-        # shuffle=True, # Cannot be used with sampler, shuffle inside sampler.
         collate_fn=dynamic_padding_collate_fn
     )
     val_loader = DataLoader(val_ds,
-                            batch_size=config.batch_size,
-                            sampler=val_sampler,
-                            collate_fn=dynamic_padding_collate_fn)
-    
-    val_ood_loader = DataLoader(val_ood_ds, batch_size=config.batch_size, collate_fn=dynamic_padding_collate_fn)
-    test_loader = DataLoader(test_ds, batch_size=config.batch_size, collate_fn=dynamic_padding_collate_fn)
+        batch_size=config.batch_size,
+        sampler=val_sampler,
+        collate_fn=dynamic_padding_collate_fn
+    )
 
     vocab_size = len(tokenizer)
 
@@ -103,7 +117,7 @@ def launch(hydra_config: DictConfig):
     train_state.model.to(device)
 
     examples_seen = 0
-    max_reasoning_steps = config.arch.__pydantic_extra__.get('max_reasoning_steps', 10)
+    max_reasoning_steps = config.arch.max_reasoning_steps
 
     # step-wise tracking (to see if 10 steps is enough / too much)
     step_wise_tracker = {i: [] for i in range(max_reasoning_steps)}
@@ -175,8 +189,12 @@ def launch(hydra_config: DictConfig):
 
             # Report to terminal
             if batch_idx % 10 == 0:
-                print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f} | Difficulty: {train_sampler.curr_difficulty}")
-
+                if config.curriculum_type is not None:
+                    curriculum_stats = f" | Curriculum Type: {config.curriculum_type} | Difficulty: {curr_difficulty} | Curriculum Ratio: {config.mix_curriculum_ratio}"
+                else:
+                    curriculum_stats = f" | Curriculum_type: None"
+                print(f"Epoch {epoch} | Batch {batch_idx}/{len(train_loader)} | Step: {train_state.step} | LR: {lr_this_step:.8f} | Loss: {loss.item():.4f}" + curriculum_stats)
+                    
             # Log step-wise metrics to WandB
             if batch_idx % LOG_STEPWISE_EVERY == 0 and batch_idx > 0:
                 stepwise_metrics = {}
@@ -197,25 +215,26 @@ def launch(hydra_config: DictConfig):
 
             # Run validation
             if train_state.step % config.eval_interval == 0 and train_state.step > 0: # type: ignore
-                print(f"Evaluating: Step {train_state.step} | Difficulty: {val_sampler.curr_difficulty}")
+                print(f"Evaluating: Step {train_state.step}")
                 total_metrics = evaluate_model(train_state.model, val_loader, device, num_batches=10)
                 val_metrics = {f"val/{k}": v for k, v in total_metrics.items()}
                 val_metrics['examples_seen'] = examples_seen
                 wandb.log(val_metrics, step=train_state.step)
 
-                # Curriculum learning
-                if total_metrics['exact_accuracy_pct'] >= config.curriculum_threshold:
-                    if not train_sampler.is_capped:
-                        curr_difficulty += 1
-                        train_sampler.update_difficulty(curr_difficulty)
-                        val_sampler.update_difficulty(curr_difficulty)
+                if config.curriculum_type is not None:
+                    # Curriculum learning
+                    if total_metrics['exact_accuracy_pct'] >= config.curriculum_threshold:
+                        if not train_sampler.is_capped:
+                            curr_difficulty += 1
+                            train_sampler.update_difficulty(curr_difficulty)
+                            val_sampler.update_difficulty(curr_difficulty)
 
-                        # Check if we've now reached the maximum difficulty
-                        if curr_difficulty >= train_sampler.max_difficulty:
-                            train_sampler.is_capped = True
-                            print(f"{'='*50}")
-                            print(f"Training Sampler DIFFICULTY CAPPED at {train_sampler.max_difficulty}")
-                            print(f"{'='*50}")
+                            # Check if we've now reached the maximum difficulty
+                            if curr_difficulty >= train_sampler.max_difficulty:
+                                train_sampler.is_capped = True
+                                print(f"{'='*50}")
+                                print(f"Training Sampler DIFFICULTY CAPPED at {train_sampler.max_difficulty}")
+                                print(f"{'='*50}")
 
             # Compute percentage metrics
             train_metrics = {f"train/{k}": v for k, v in metrics.items()}
@@ -227,9 +246,12 @@ def launch(hydra_config: DictConfig):
             train_metrics['examples_seen'] = examples_seen
             wandb.log(train_metrics, step=train_state.step)
             train_state.step += 1
-            wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
-    
-        # train_utils.save_checkpoint(train_state, config, filename=f"step_{train_state.step}.pt")
+
+            if config.curriculum_type is not None:
+                wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
+
+        if config.checkpoint_every_epoch:
+            train_utils.save_checkpoint(train_state, config, filename=f"epoch_step_{train_state.step}.pt")
         # Final epoch metrics
         num_batches = len(train_loader)
         print(f"\n=== Epoch {epoch} Summary ===")

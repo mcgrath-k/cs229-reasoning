@@ -72,20 +72,26 @@ def score_data(data, metric):
 
     return difficulties
 
-def score_dataset(dataset, metric):
+def score_dataset(dataset: DatasetDict, metric_select: str):
     """
     Args:
-        dataset (_type_): dictionary of datasets
+        dataset (DatasetDict): dictionary of datasets
                             typically {'train':iterable, 'val': iterable, 'test': iterable}
-        metric (_type_): takes an example and returns an integer 
+        metric (str) : takes an example and returns an integer 
     """
+
+    if metric_select in AVAILABLE_METRICS:
+        metric = AVAILABLE_METRICS[metric_select]
+    else:
+        raise KeyError(f"{metric_select = } is not in available metrics, please select from: {AVAILABLE_METRICS}")
+        
     print(f"metric is {metric}")
     segment_max_difficulties = []
     for segment in dataset:
         print(f"Scoring split: {segment}")
         # Compute difficulties and append to dataset
         difficulties = score_data(dataset[segment], metric)
-        dataset[segment] = dataset[segment].add_column('difficulty', difficulties)
+        dataset[segment] = dataset[segment].add_column(f'diff_{metric_select}', difficulties)
 
         max_diff = np.max(difficulties)
         segment_max_difficulties.append(max_diff)
@@ -95,21 +101,30 @@ def score_dataset(dataset, metric):
     return dataset 
  
 ### TO Do: make sure the path makes sense with the file name
-def save_dataset_to_disk(dataset_dict, save_dir):
+def save_dataset_to_disk(dataset_dict: DatasetDict, save_dir: str):
     os.makedirs(save_dir, exist_ok=True)
     dataset_dict.save_to_disk(save_dir)
     print("Saved Huggingface Dataset to disk")
 
 ######### SET THESE VARIABLES !!!!!!!!!!!!!! ###############
-DATASET_PATH = 'data/addition_dataset_big'
-METRIC = max_len
+LOCAL_DATASET_PATH = 'data/addition_dataset_big'
+
+AVAILABLE_METRICS = {
+    'max_len': max_len,
+    'min_len': min_len,
+    'carries': add_carries,
+
+}
 
 if __name__== '__main__':
     ### Set path and metric above before running
-    metric_name = getattr(METRIC, "__name__", str(METRIC))
-    print(f"metric name is {metric_name}")
-    dataset_dict = load_from_disk(DATASET_PATH)
 
-    scored_dataset = score_dataset(dataset_dict, METRIC)
-    save_dir = DATASET_PATH + '_scored_' + metric_name
-    save_dataset_to_disk(scored_dataset, save_dir)
+    dataset_dict = load_from_disk(LOCAL_DATASET_PATH)
+
+    for metric_key in AVAILABLE_METRICS.keys():
+        print(f"Metric name is: {metric_key}")
+        dataset_dict = score_dataset(dataset_dict, metric_key)
+
+    # save_dir = DATASET_PATH + '_scored_' + metric_name
+    # save_dataset_to_disk(dataset_dict, save_dir)
+    dataset_dict.push_to_hub('mkyle/addition_dataset_5_million_scored')

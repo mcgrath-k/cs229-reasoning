@@ -3,7 +3,7 @@ import pydantic
 import torch
 from torch import nn
 
-from typing import Optional, Any, Sequence, List
+from typing import Optional, Any, List, Literal
 
 from dataclasses import dataclass
 
@@ -17,6 +17,8 @@ class ArchConfig(pydantic.BaseModel):
     name: str
     loss: LossConfig
 
+    max_reasoning_steps: int
+
 
 class EvaluatorConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
@@ -28,16 +30,18 @@ class PretrainConfig(pydantic.BaseModel):
     arch: ArchConfig
 
     # Dataset
-    dataset_path: str
+    dataset_path: str # Can be huggingface repo_id or local folder
+    dataset_is_remote: bool # Is the dataset hosted on huggingface?
+    
 
     # Hyperparams
     batch_size: int
     epochs: int
 
+    # Curriculum learning
+    mix_curriculum_ratio: float # float from 0->1. 1: Full curriculum, 0: Regular dataset
     curriculum_threshold: float
-    # Mix 1/5 regular data + 4/5 curriculum data
-    mix_curriculum_data: bool
-
+    curriculum_type: Optional[Literal["diff_max_len", "diff_carries", "diff_min_len"]] = None
 
     lr: float
     lr_min_ratio: float
@@ -54,7 +58,7 @@ class PretrainConfig(pydantic.BaseModel):
     checkpoint_path: Optional[str] = None
 
     # Extras
-    checkpoint_every_eval: bool = False
+    checkpoint_every_epoch: bool = False
     eval_interval: Optional[int] = None
     min_eval_interval: Optional[int] = 0 # when to start eval
     eval_save_outputs: List[str] = []

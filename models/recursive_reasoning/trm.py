@@ -11,8 +11,6 @@ from models.common import trunc_normal_init_
 from models.layers import rms_norm, LinearSwish, SwiGLU, Attention, RotaryEmbedding, CosSin, CastedEmbedding, CastedLinear
 from models.sparse_embedding import CastedSparseEmbedding
 
-IGNORE_LABEL_ID = -100
-
 @dataclass
 class TinyRecursiveReasoningModel_ACTV1InnerCarry:
     z_H: torch.Tensor
@@ -49,8 +47,7 @@ class TinyRecursiveReasoningModel_ACTV1Config(BaseModel):
     rope_theta: float = 10000.0
     
     # Fixed reasoning steps
-    # TODO: might need to think about what values to set here
-    max_reasoning_steps: int = 1 
+    max_reasoning_steps: int
 
     forward_dtype: str = "bfloat16"
 

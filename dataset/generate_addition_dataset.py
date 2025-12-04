@@ -96,6 +96,7 @@ class AdditionDataset():
 
 def build_train_val_test_dataset(train_range =(1,20), 
                                  val_range=(1,20), 
+                                 val_extrapolate_range=(1,30),
                                  test_range=(1,100), 
                                  total_train_samples=5_000_000, 
                                  test_samples_per_pair=10,
@@ -117,7 +118,7 @@ def build_train_val_test_dataset(train_range =(1,20),
 
     if gen_extrapolation_dataset:
         print("Generating validation extrapolation examples")
-        val_extrapolate_gen = AdditionDataset(test_range[0], test_range[1], samples_per_pair=test_samples_per_pair)
+        val_extrapolate_gen = AdditionDataset(val_extrapolate_range[0], val_extrapolate_range[1], samples_per_pair=test_samples_per_pair)
         val_extrapolate_ds = val_extrapolate_gen.generate_examples()
 
         return DatasetDict({
@@ -138,9 +139,25 @@ def save_dataset_to_disk(dataset_dict, save_dir='data/addition_dataset_big'):
     dataset_dict.save_to_disk(save_dir)
     print("Saved Huggingface Dataset to disk")
 
+def push_dataset_to_hub(dataset_dict: DatasetDict, repo_id: str):
+    """Push dataset to Huggingface
+
+    REQUIRES LOGIN prior to running this script:
+    `hf auth login`
+    
+    Args:
+        dataset_dict (DatasetDict): Huggingface Dataset
+        repo_id (str): The name of pre-existing repo or new repo you want to create.
+    """
+
+    dataset_dict.push_to_hub(repo_id)
+
 if __name__ == '__main__':
     random.seed(SEED)
 
     dataset_dict = build_train_val_test_dataset()
 
     save_dataset_to_disk(dataset_dict)
+
+    
+    # push_dataset_to_hub(dataset_dict, 'mkyle/addition_dataset_5_million')
