@@ -150,11 +150,11 @@ class TinyRecursiveReasoningModel_ACTV1_Inner(nn.Module):
         # Forward iterations
         z_H, z_L = carry.z_H, carry.z_L
         # H_cycles-1 without grad
-        with torch.no_grad():
-            for _H_step in range(self.config.H_cycles-1):
-                for _L_step in range(self.config.L_cycles):
-                    z_L = self.L_level(z_L, z_H + input_embeddings, **seq_info)
-                z_H = self.L_level(z_H, z_L, **seq_info)
+        # with torch.no_grad():
+        for _H_step in range(self.config.H_cycles-1):
+            for _L_step in range(self.config.L_cycles):
+                z_L = self.L_level(z_L, z_H + input_embeddings, **seq_info)
+            z_H = self.L_level(z_H, z_L, **seq_info)
         # 1 with grad
         for _L_step in range(self.config.L_cycles):
             z_L = self.L_level(z_L, z_H + input_embeddings, **seq_info)
