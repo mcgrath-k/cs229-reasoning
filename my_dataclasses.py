@@ -62,6 +62,7 @@ class PretrainConfig(pydantic.BaseModel):
     eval_interval: Optional[int] = None
     min_eval_interval: Optional[int] = 0 # when to start eval
     eval_save_outputs: List[str] = []
+    end_after_n_examples: Optional[int] = None
 
     seed: int = 0
     save_interval: int # Save every n steps.

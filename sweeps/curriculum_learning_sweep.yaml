@@ -1,0 +1,26 @@
+program: pretrain_simple.py
+name: Curriculum Learning Sweep
+method: grid
+
+metric:
+  name: val/exact_accuracy_pct
+  goal: maximize
+
+parameters:
+  curriculum_type:
+    values: ['null', 'diff_max_len', 'diff_carries', 'diff_min_len']
+  curriculum_threshold:
+    values: [0.9, 0.95]
+  
+  end_after_n_examples:
+    value: 15000000
+
+  save_interval:
+    value: 3000
+
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

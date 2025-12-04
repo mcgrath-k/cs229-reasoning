@@ -30,8 +30,7 @@
       "args": [
         "epochs=20000",
         "batch_size=128",
-        "lr=5e-4",
-        "weight_decay=1.0",
+        "curriculum_type=null"
       ],
       "console": "integratedTerminal",
       "justMyCode": false,

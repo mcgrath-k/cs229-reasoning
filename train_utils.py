@@ -80,6 +80,7 @@ def save_checkpoint(train_state, config, filename="checkpoint.pt"):
     }, path)
 
     print(f"Saved checkpoint to {path}")
+    return path
 
 
 def quick_validate(output_tensor: torch.Tensor, label_tensor: torch.Tensor) -> None:

@@ -103,6 +103,7 @@ def launch(hydra_config: DictConfig):
 
     vocab_size = len(tokenizer)
 
+    stop_training = False
     steps_per_epoch = len(train_loader)
     total_steps = steps_per_epoch * config.epochs
 
@@ -140,6 +141,12 @@ def launch(hydra_config: DictConfig):
 
         for batch_idx, batch in enumerate(train_loader):
             batch = {k: v.to(device) for k, v in batch.items()}
+
+            # Stop training
+            if config.end_after_n_examples and examples_seen >= config.end_after_n_examples:
+                # Need to break batch loop and epoch loop
+                stop_training = True
+                break
 
             # Track current batch size and update examples_seen
             batch_size = batch['input_ids'].size(0)
@@ -250,8 +257,14 @@ def launch(hydra_config: DictConfig):
             if config.curriculum_type is not None:
                 wandb.log({"train/difficulty": train_sampler.curr_difficulty, "val/difficulty": val_sampler.curr_difficulty}, step=train_state.step)
 
+
         if config.checkpoint_every_epoch:
             train_utils.save_checkpoint(train_state, config, filename=f"epoch_step_{train_state.step}.pt")
+
+        if stop_training:
+            print(f"Stopping early after seeing {examples_seen} examples.")
+            break
+        
         # Final epoch metrics
         num_batches = len(train_loader)
         print(f"\n=== Epoch {epoch} Summary ===")
@@ -262,6 +275,15 @@ def launch(hydra_config: DictConfig):
             print(f"Exact Accuracy: {epoch_metrics['exact_accuracy'] / epoch_metrics['count']:.4f}")
             print(f"Avg Steps: {epoch_metrics['steps'] / epoch_metrics['count']:.2f}")
         print("="*30 + "\n")
+
+
+    checkpoint_path = train_utils.save_checkpoint(train_state, config, filename=f"FINAL_{train_state.step}.pt")
+
+    # Upload model to WandB
+    artifact = wandb.Artifact(name=f"model-{config.run_name}",type="model")
+    artifact.add_file(checkpoint_path)
+    wandb.log_artifact(artifact)
+    wandb.finish(0)
 
 if __name__ == "__main__":
     launch()
