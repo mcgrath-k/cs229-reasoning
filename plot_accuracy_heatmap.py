@@ -1,5 +1,6 @@
-# Designed by Aarohi Gupta - committed by mcgrathk
+# Designed by Aarohi Gupta - vectorized/committed by mcgrathk
 
+import os
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ from dataset.build_addition_dataset import ArithmeticTorchDataset, ArithmeticTok
 from collections import defaultdict
 from tqdm import tqdm
 import pickle
+from pathlib import Path
 
 from constants import HF_DATASET_REPO
 
@@ -138,7 +140,7 @@ def evaluate_by_length(model, dataloader, tokenizer, device, max_batches=None, m
     model.train()
     return length_accuracies
 
-def create_heatmap(length_accuracies, title="Positional Embedding Accuracy"):
+def create_heatmap(length_accuracies, title="Positional Embedding Accuracy", footer_text=None):
     if not length_accuracies:
         print("No data to plot!")
         return
@@ -172,16 +174,19 @@ def create_heatmap(length_accuracies, title="Positional Embedding Accuracy"):
     fig, ax = plt.subplots(figsize=(10, 8))
     
     # Plot heatmap - masked values won't be shown
-    im = ax.imshow(accuracy_matrix_masked, origin='lower', cmap='RdYlGn', 
+    im = ax.imshow(accuracy_matrix_masked, origin='lower', cmap='YlGnBu_r', # reverse = YlGnBu_r
                    vmin=0, vmax=100, aspect='auto')
     
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label('Accuracy', rotation=270, labelpad=20, fontsize=12)
+    cbar.set_label('Accuracy', rotation=270, labelpad=20, fontsize=16)
     
     # Set labels
-    ax.set_xlabel('Length of Operand Two', fontsize=14)
-    ax.set_ylabel('Length of Operand One', fontsize=14)
+    ax.set_xlabel('Length of Operand Two', fontsize=14, labelpad=30)
+    ax.set_ylabel('Length of Operand One', fontsize=14, labelpad=30)
+    # Make tick marks bigger
+    ax.tick_params(axis='both', which='major', length=8, width=1.5)
+
     ax.set_title(title, fontsize=16)
     
     ax.set_xticks(np.arange(min(len2_values), max(len2_values) + 1, 
@@ -190,15 +195,35 @@ def create_heatmap(length_accuracies, title="Positional Embedding Accuracy"):
                             max(1, (max(len1_values) - min(len1_values)) // 10)))
     ax.set_xlim(min(len2_values) - 0.5, max(len2_values) + 0.5)
     ax.set_ylim(min(len1_values) - 0.5, max(len1_values) + 0.5)
+
+    if footer_text is not None:
+        plt.tight_layout(rect=(0, 0.08, 1, 1)) # Some space for cropping watermark.
+
+        fig.text(
+            0.99, 0.01, # (x, y) in figure coordinates (0–1)
+            footer_text,
+            ha="right", va="bottom", # anchor bottom-right
+            fontsize=8,
+            alpha=0.6  
+        )
+    else:
+        plt.tight_layout()
+
     
-    plt.tight_layout()
     return fig, accuracy_matrix, count_matrix
 
 if __name__ == "__main__":
-    CHECKPOINT_PATH = 'reas_8_step_22000.pt'
+    CHECKPOINT_PATH = 'results_collection/FINAL_58598.pt'
+    OUTPUT_FOLDER = 'plots'
     MAX_REASONING_STEPS = 10
+
+    filename = Path(CHECKPOINT_PATH).stem
+    
+    output_dir = Path(Path(OUTPUT_FOLDER) / filename)
+    os.makedirs(output_dir, exist_ok=True)
     
     tokenizer = ArithmeticTokenizer()
+
     model = load_checkpoint(CHECKPOINT_PATH, tokenizer, optimizer=None)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -208,7 +233,7 @@ if __name__ == "__main__":
     dataset_dict = load_dataset(HF_DATASET_REPO)
     
     # using test set
-    test_ds = ArithmeticTorchDataset(dataset_dict["test"], tokenizer)
+    test_ds = ArithmeticTorchDataset(dataset_dict["val_extrapolate"], tokenizer)
     test_loader = DataLoader(test_ds, batch_size=128, collate_fn=dynamic_padding_collate_fn)
 
     
@@ -220,16 +245,17 @@ if __name__ == "__main__":
                                            max_reasoning_steps=MAX_REASONING_STEPS)
     
     # save output length_accuracies for debugging
-    with open("length_accuracies.pkl", "wb") as f:
+    with open(output_dir / "length_accuracies.pkl", "wb") as f:
         pickle.dump(length_accuracies, f)
     
     fig, accuracy_matrix, count_matrix = create_heatmap(length_accuracies, 
-                                                        title="Model Accuracy by Operand Length")
+                                                        title="Model Exact Accuracy by Operand Length",
+                                                        footer_text=filename)
     
-    np.save("accuracy_matrix.npy", accuracy_matrix)
-    np.save("count_matrix.npy", count_matrix)
+    np.save(output_dir / "accuracy_matrix.npy", accuracy_matrix)
+    np.save(output_dir / "count_matrix.npy", count_matrix)
 
-    output_path = "length_accuracy_heatmap.png"
+    output_path = output_dir / "length_accuracy_heatmap.png"
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     
     plt.show()
