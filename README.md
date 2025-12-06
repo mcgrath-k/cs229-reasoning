@@ -1,14 +1,42 @@
 # CS229 Reasoning Project
 
-### Setup
+## Information
 ---
+Authors:
+Aarohi Gupta (aarohig@stanford.edu)
+Kathryn Lesh (leshk@stanford.edu)
+Kyle McGrath (mcgrathk@stanford.edu)
 
-For now, we will be using runpod.io as it is quick to set up and pricing is transparent. I am primarily using A40 GPU instances, they are cheaper and quick.
+Exploration on length generalization with a recursive self-attention based architecture.
 
-Here is my setup after runpod instance has been started.
+### Dataset
+---
+Two datasets are available:
 
-SSH into runpod instance. Remember that any files outside of `/workspace` will be deleted when the instance is paused!
+**Training / Validation:**
+https://huggingface.co/datasets/mkyle/addition_dataset_5_million
 
+**Test**
+https://huggingface.co/datasets/mkyle/TEST_addition_dataset_5_million_scored
+
+
+Modify the HF_REPO_ID in the codebase to:
+```
+mkyle/addition_dataset_5_million
+```
+```
+mkyle/TEST_addition_dataset_5_million_scored
+```
+Depending on your usecase.
+
+### Running a sample experiment:
+```bash
+python pretrain_simple.py batch_size=256 curriculum_type=diff_carries
+```
+
+
+## Setup
+---
 Install GitHub CLI (https://github.com/cli/cli/blob/trunk/docs/install_linux.md#debian)
 
 ```bash
@@ -56,11 +84,7 @@ wandb login
 Now test if you are able to train models:
 
 ```bash
-# Download and build Sudoku dataset
-python dataset/build_sudoku_dataset.py --output-dir data/sudoku-extreme-1k-aug-1000  --subsample-size 1000 --num-aug 1000
-
-# Start training (single GPU, smaller batch size)
-OMP_NUM_THREADS=8 python pretrain.py data_path=data/sudoku-extreme-1k-aug-1000 epochs=20000 eval_interval=2000 batch_size=384 lr=7e-5 weight_decay=1.0
+python pretrain_simple.py batch_size=256 curriculum_type=<null, diff_max_len, diff_min_len, diff_carries> 
 ```
 
 
