@@ -42,8 +42,8 @@ def generate(model, tokenizer, prompt_text, max_length=100, device='cuda', max_r
         for _ in range(max_length):
             for step in range(max_reasoning_steps):
                 final = (step == max_reasoning_steps - 1)
-                
-                carry, loss, metrics, outputs, halted = model(
+
+                carry, loss, metrics, outputs = model(
                     return_keys=["logits", "preds"],
                     carry=carry,
                     batch=batch,
@@ -147,36 +147,108 @@ def evaluate_model(model, val_loader, device, num_batches=None, max_reasoning_st
 
 
 
-if __name__ == "__main__":
-
-    CHECKPOINT_PATH = 'checkpoints/arithmetic/TinyRecursiveReasoningModel_ACTV1_sage-wolf/step_7000.pt'
-
-    dataset_dict = load_dataset(HF_DATASET_REPO)
-    
-    if not os.path.exists(CHECKPOINT_PATH):
-        raise FileNotFoundError(f"Saved model weights: {CHECKPOINT_PATH} can not be found")
-
-    prompt_text = "10+60="
-    batch_size = 128
+def evaluate_checkpoint(checkpoint_path, val_loader, device, num_batches=10, max_reasoning_steps=10):
+    """Evaluate a single checkpoint and return metrics."""
     tokenizer = ArithmeticTokenizer()
-    model = load_checkpoint(CHECKPOINT_PATH, tokenizer, optimizer=None)
 
-    # move model to GPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\nLoading checkpoint: {checkpoint_path}")
+    model = load_checkpoint(checkpoint_path, tokenizer, optimizer=None)
     model.to(device)
 
-    generated_text = generate(model, tokenizer, prompt_text)
+    print(f"Evaluating on {num_batches} batches...")
+    metrics = evaluate_model(model, val_loader, device, num_batches=num_batches, max_reasoning_steps=max_reasoning_steps)
 
-    print(generated_text)
+    # Clean up model from GPU
+    del model
+    torch.cuda.empty_cache()
+
+    return metrics
 
 
-    ## Test evaluate model
-    dataset_dict = load_dataset(HF_DATASET_REPO)
+def save_metrics_to_file(metrics, output_path):
+    """Save metrics dictionary to a text file."""
+    with open(output_path, 'w') as f:
+        f.write("=" * 50 + "\n")
+        f.write("Model Evaluation Results\n")
+        f.write("=" * 50 + "\n\n")
+
+        for key, value in metrics.items():
+            if isinstance(value, float):
+                f.write(f"{key}: {value:.6f}\n")
+            else:
+                f.write(f"{key}: {value}\n")
+
+        f.write("\n" + "=" * 50 + "\n")
+
+    print(f"Results saved to: {output_path}")
+
+
+if __name__ == "__main__":
+    import glob
+
+    # Configuration
+    CHECKPOINT_FOLDER = 'CURRICULUM_LEARNING_TEST'
+    OUTPUT_FOLDER = 'curriculum_evaluation_results/'
+    BATCH_SIZE = 128
+    NUM_BATCHES = 100  # batch_size * num_batches = total test examples (128 × 100 = 12,800)
+    MAX_REASONING_STEPS = 10
+
+    # Create output folder
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+    # Setup device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # Load dataset once
+    print("Loading dataset...")
+    dataset_dict = load_dataset('mkyle/TEST_addition_dataset_5_million_scored')
     tokenizer = ArithmeticTokenizer()
     val_ds = ArithmeticTorchDataset(dataset_dict["val"], tokenizer)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=dynamic_padding_collate_fn)
+    val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, collate_fn=dynamic_padding_collate_fn)
 
-    total_metrics = evaluate_model(model, val_loader, device, num_batches=batch_size)
+    # Find all .pt files in the checkpoint folder
+    checkpoint_pattern = os.path.join(CHECKPOINT_FOLDER, "*.pt")
+    checkpoint_files = sorted(glob.glob(checkpoint_pattern))
 
+    if not checkpoint_files:
+        raise FileNotFoundError(f"No .pt files found in {CHECKPOINT_FOLDER}")
 
-    print(total_metrics)
+    print(f"\nFound {len(checkpoint_files)} checkpoint(s) to evaluate:")
+    for ckpt in checkpoint_files:
+        print(f"  - {os.path.basename(ckpt)}")
+
+    # Evaluate each checkpoint
+    for checkpoint_path in checkpoint_files:
+        checkpoint_name = os.path.splitext(os.path.basename(checkpoint_path))[0]
+        output_path = os.path.join(OUTPUT_FOLDER, f"{checkpoint_name}.txt")
+
+        try:
+            metrics = evaluate_checkpoint(
+                checkpoint_path,
+                val_loader,
+                device,
+                num_batches=NUM_BATCHES,
+                max_reasoning_steps=MAX_REASONING_STEPS
+            )
+
+            # Print to console
+            print("\nMetrics:")
+            for key, value in metrics.items():
+                if isinstance(value, float):
+                    print(f"  {key}: {value:.6f}")
+                else:
+                    print(f"  {key}: {value}")
+
+            # Save to file
+            save_metrics_to_file(metrics, output_path)
+
+        except Exception as e:
+            print(f"ERROR evaluating {checkpoint_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+    print("\n" + "=" * 50)
+    print("Evaluation complete!")
+    print("=" * 50)

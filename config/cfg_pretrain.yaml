@@ -25,6 +25,7 @@ epochs: 100000 # Arbitrarily large to not stop early
 eval_interval: 100 # How often to run validation
 save_interval: 2000 # How often to save the model
 checkpoint_every_epoch: False
+end_after_n_examples: 10000 # Stop run after passing through n exmaples
 
 lr: 5e-4
 lr_min_ratio: 1.0
