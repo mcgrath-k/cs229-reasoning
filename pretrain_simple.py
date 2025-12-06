@@ -183,7 +183,7 @@ def launch(hydra_config: DictConfig):
                     loss.backward()
 
                     # clip gradients to prevent explosion
-                    torch.nn.utils.clip_grad_norm_(train_state.model.parameters(), max_norm=1.0)
+                    # torch.nn.utils.clip_grad_norm_(train_state.model.parameters(), max_norm=1.0)
 
                     # step optimizer lr
                     lr_this_step = compute_lr(train_state.optimizer_lr, config, train_state)
